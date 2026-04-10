@@ -33,24 +33,47 @@ export default function POS() {
       try {
         // Obter o store_id do utilizador autenticado
         const { data: { user } } = await supabase.auth.getUser();
-        let currentStoreId = null;
-        if (user) {
-          const { data: profile } = await supabase.from('profiles').select('store_id').eq('id', user.id).single();
-          if (profile?.store_id) {
-            currentStoreId = profile.store_id;
-            setStoreId(currentStoreId);
-          }
+        if (!user) {
+          console.warn('POS: Utilizador não autenticado');
+          setIsLoading(false);
+          return;
         }
 
-        const [productsRes, brandsRes] = await Promise.all([
-          currentStoreId ? supabase.from('products').select('*').eq('store_id', currentStoreId) : supabase.from('products').select('*').is('store_id', null),
-          currentStoreId ? supabase.from('brands').select('*').eq('store_id', currentStoreId) : supabase.from('brands').select('*').is('store_id', null)
-        ]);
+        let currentStoreId = null;
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('store_id')
+          .eq('id', user.id)
+          .single();
+
+        if (profileError) {
+          console.error('POS: Erro ao buscar perfil:', profileError);
+        }
         
+        if (profile?.store_id) {
+          currentStoreId = profile.store_id;
+          setStoreId(currentStoreId);
+        }
+
+        // Buscar produtos e marcas DA LOJA do utilizador
+        let productsQuery = supabase.from('products').select('*');
+        let brandsQuery = supabase.from('brands').select('*');
+
+        if (currentStoreId) {
+          productsQuery = productsQuery.eq('store_id', currentStoreId);
+          brandsQuery = brandsQuery.eq('store_id', currentStoreId);
+        }
+
+        const [productsRes, brandsRes] = await Promise.all([productsQuery, brandsQuery]);
+        
+        console.log('POS: Produtos encontrados:', productsRes.data?.length, 'Marcas:', brandsRes.data?.length);
+        if (productsRes.error) console.error('POS: Erro produtos:', productsRes.error);
+        if (brandsRes.error) console.error('POS: Erro marcas:', brandsRes.error);
+
         if (productsRes.data) setProducts(productsRes.data);
         if (brandsRes.data) setBrands(brandsRes.data);
       } catch (error) {
-        console.error("Error fetching data:", error);
+        console.error("POS: Error fetching data:", error);
       } finally {
         setIsLoading(false);
       }

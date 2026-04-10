@@ -135,14 +135,15 @@ export default function Dashboard() {
     if (!newProduct.name) return;
     setIsSaving(true);
     try {
-      // Verifica se a Categoria já existe (ignorando maiúsculas e minúsculas)
+      // Verifica se a Categoria já existe NESTA LOJA (ignorando maiúsculas e minúsculas)
       const { data: exist } = await supabase
         .from('products')
         .select('*')
+        .eq('store_id', currentStoreId)
         .ilike('name', newProduct.name);
 
       if (exist && exist.length > 0) {
-        alert('Este Produto/Categoria já existe! Não é possível duplicar.');
+        alert('Este Produto/Categoria já existe na sua loja! Não é possível duplicar.');
         setIsSaving(false);
         return;
       }
@@ -168,10 +169,11 @@ export default function Dashboard() {
     }
     setIsSaving(true);
     try {
-      // Procurar se esta Marca já existe dentro deste Produto
+      // Procurar se esta Marca já existe dentro deste Produto NESTA LOJA
       const { data: existingItems, error: searchError } = await supabase
         .from('brands')
         .select('*')
+        .eq('store_id', currentStoreId)
         .eq('product_id', Number(newBrand.product_id))
         .ilike('name', newBrand.name);
 
