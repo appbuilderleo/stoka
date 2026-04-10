@@ -27,7 +27,9 @@ import {
   Phone,
   Mail,
   MapPin,
-  Hash
+  Hash,
+  Menu,
+  X
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
@@ -37,6 +39,7 @@ import './Dashboard.css';
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
 
   // Data states
@@ -530,17 +533,28 @@ export default function Dashboard() {
 
   return (
     <div className="dashboard-container">
-      <aside className="sidebar">
+      {/* Overlay mobile */}
+      {isMobileMenuOpen && (
+        <div className="mobile-overlay" onClick={() => setIsMobileMenuOpen(false)}></div>
+      )}
+
+      <aside className={`sidebar ${isMobileMenuOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
           <div className="sidebar-logo">KaziHub Admin</div>
+          <button className="mobile-close-btn" onClick={() => setIsMobileMenuOpen(false)}>
+            <X size={24} />
+          </button>
         </div>
         
         <nav className="sidebar-nav">
           {NAV_ITEMS.map(item => (
-             <button 
+              <button 
                key={item.id}
                className={`nav-item ${activeTab === item.id ? 'active' : ''}`}
-               onClick={() => setActiveTab(item.id)}
+               onClick={() => {
+                 setActiveTab(item.id);
+                 setIsMobileMenuOpen(false);
+               }}
              >
                {item.icon}
                {item.label}
@@ -551,7 +565,7 @@ export default function Dashboard() {
         <div className="sidebar-footer">
           <button className="btn-primary" style={{ width: '100%', marginBottom: '16px', justifyContent: 'center' }} onClick={() => navigate('/pos')}>
             <MonitorPlay size={18} />
-            Abrir POS (Vendas)
+            Abrir POS
           </button>
           <button className="nav-item" onClick={handleLogout} style={{ color: 'var(--danger)', padding: '12px 0' }}>
             <LogOut size={20} />
@@ -562,9 +576,14 @@ export default function Dashboard() {
 
       <main className="dashboard-main">
         <header className="dashboard-header">
-          <div style={{ fontWeight: '600' }}>Bem-vindo(a), {storeSettings.storeName}</div>
-          <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-             <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+          <div className="header-left">
+            <button className="mobile-menu-btn" onClick={() => setIsMobileMenuOpen(true)}>
+              <Menu size={24} />
+            </button>
+            <div className="header-greeting">Bem-vindo(a), {storeSettings.storeName}</div>
+          </div>
+          <div className="header-right">
+             <div className="user-avatar">
                {storeSettings.storeName.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase()}
              </div>
           </div>
@@ -611,7 +630,7 @@ export default function Dashboard() {
                 <div className="content-card">
                   <div className="card-header">
                      <h3>Gestão de Marcas e Produtos</h3>
-                     <div style={{ display: 'flex', gap: '12px' }}>
+                     <div className="action-buttons-group">
                        <button className="btn-primary" style={{ backgroundColor: '#f97316' }} onClick={openReinforceStockModal}>
                           <Plus size={18} />
                           Reforçar Stock
@@ -667,8 +686,8 @@ export default function Dashboard() {
                     const plan = currentSubscription.subscription_plans;
                     const planColor = plan ? getPlanColor(plan.name) : getPlanColor('');
                     return (
-                      <div style={{ backgroundColor: 'var(--primary)', borderRadius: 'var(--radius)', padding: '28px 32px', marginBottom: '24px', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 10px 30px -5px rgba(0,0,0,0.2)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                      <div className="subscription-current-plan">
+                        <div className="subscription-plan-info">
                           <div style={{ width: '56px', height: '56px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             {plan ? getPlanIcon(plan.name) : <CreditCard size={28} />}
                           </div>
@@ -678,8 +697,8 @@ export default function Dashboard() {
                             <div style={{ fontSize: '14px', opacity: 0.8, marginTop: '4px' }}>{plan?.description || ''}</div>
                           </div>
                         </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ display: 'inline-block', padding: '6px 16px', borderRadius: '20px', backgroundColor: statusInfo.bg, color: statusInfo.color, fontWeight: '700', fontSize: '14px', marginBottom: '8px' }}>
+                        <div className="subscription-plan-price">
+                          <div className="subscription-status-badge" style={{ backgroundColor: statusInfo.bg, color: statusInfo.color }}>
                             {statusInfo.label}
                           </div>
                           <div style={{ fontSize: '32px', fontWeight: '800' }}>{Number(currentSubscription.amount_paid).toFixed(2)} MZN</div>
@@ -690,7 +709,7 @@ export default function Dashboard() {
                   })()}
 
                   {/* Info Cards Row */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
+                  <div className="subscription-cards-grid">
                     <div className="content-card" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                       <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: '#eff6ff', color: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <Calendar size={22} />
@@ -766,7 +785,7 @@ export default function Dashboard() {
                       )}
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${subscriptionPlans.length}, 1fr)`, gap: '20px' }}>
+                    <div className="subscription-comparison-grid">
                       {subscriptionPlans.map(plan => {
                         const isCurrentPlan = currentSubscription?.subscription_plans?.id === plan.id;
                         const planColor = getPlanColor(plan.name);
