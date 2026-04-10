@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ShoppingCart, Plus, Minus, X, CreditCard, Banknote, Box, Package, Coffee, Droplet, ShoppingBag, Wine, Milk } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Search, ShoppingCart, Plus, Minus, X, CreditCard, Banknote, Box, Package, Coffee, Droplet, ShoppingBag, Wine, Milk, LayoutDashboard } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 
@@ -11,8 +12,10 @@ const getIcon = (name) => {
 };
 
 export default function POS() {
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState([]);
+  const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
   
   // Supabase Data States
   const [products, setProducts] = useState([]);
@@ -200,8 +203,13 @@ export default function POS() {
     <div className="pos-container">
       {/* Header */}
       <header className="pos-header">
-        <div style={{ fontSize: '24px', fontWeight: '800', letterSpacing: '-1px' }}>
-          KaziHub
+        <div className="pos-header-left">
+          <button className="pos-dashboard-btn" onClick={() => navigate('/dashboard')}>
+            <LayoutDashboard size={20} />
+          </button>
+          <div style={{ fontSize: '20px', fontWeight: '800', letterSpacing: '-1px' }}>
+            KaziHub
+          </div>
         </div>
         <div className="search-bar">
           <Search className="search-icon" size={20} />
@@ -230,14 +238,14 @@ export default function POS() {
                 <div className="product-icon" style={{ color: 'var(--primary)' }}>
                   {getIcon(product.icon)}
                 </div>
-                <span style={{ fontSize: '18px' }}>{product.name}</span>
+                <span>{product.name}</span>
               </button>
             ))
           )}
         </div>
 
-        {/* Cart */}
-        <div className="cart-section">
+        {/* Desktop Cart (visível apenas no desktop) */}
+        <div className="cart-section cart-desktop">
           <div className="cart-header">
             <span>Carrinho</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--secondary)', fontSize: '14px' }}>
@@ -318,8 +326,8 @@ export default function POS() {
           </div>
         </div>
 
-        {/* Payment */}
-        <div className="payment-section">
+        {/* Desktop Payment (visível apenas no desktop) */}
+        <div className="payment-section payment-desktop">
           <button 
             className="pay-btn pay-cash" 
             disabled={cart.length === 0 || isProcessing}
@@ -347,6 +355,108 @@ export default function POS() {
           </button>
         </div>
       </main>
+
+      {/* Botão Flutuante do Carrinho (Mobile Only) */}
+      <button 
+        className="mobile-cart-fab"
+        onClick={() => setIsMobileCartOpen(true)}
+      >
+        <ShoppingCart size={24} />
+        {cart.length > 0 && (
+          <span className="cart-badge">{cart.length}</span>
+        )}
+      </button>
+
+      {/* Painel do Carrinho Mobile (Slide-Up) */}
+      <AnimatePresence>
+        {isMobileCartOpen && (
+          <motion.div
+            className="mobile-cart-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsMobileCartOpen(false)}
+          >
+            <motion.div
+              className="mobile-cart-panel"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="mobile-cart-handle">
+                <div className="handle-bar"></div>
+              </div>
+              <div className="cart-header">
+                <span>Carrinho</span>
+                <button onClick={() => setIsMobileCartOpen(false)} style={{ background: 'none', color: 'var(--secondary)', padding: '4px' }}>
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="cart-items" style={{ maxHeight: '40vh', overflowY: 'auto' }}>
+                {cart.length === 0 ? (
+                  <div style={{ textAlign: 'center', color: 'var(--secondary)', padding: '30px 20px' }}>
+                    <ShoppingCart size={40} style={{ opacity: 0.2, margin: '0 auto 12px' }} />
+                    <p>Carrinho vazio</p>
+                  </div>
+                ) : (
+                  cart.map((item, idx) => (
+                    <div key={`m-${item.productId}-${item.brandId}`} className="cart-item">
+                      <div className="cart-item-info">
+                        <div className="cart-item-title">{item.productName}</div>
+                        <div className="cart-item-brand">{item.brandName} - {item.price} MZN</div>
+                      </div>
+                      <div className="cart-item-controls">
+                        <button className="qty-btn" onClick={() => updateCartQuantity(idx, -1)}><Minus size={14} /></button>
+                        <span style={{ fontWeight: '600', minWidth: '30px', textAlign: 'center' }}>{item.quantity}</span>
+                        <button className="qty-btn" onClick={() => updateCartQuantity(idx, 1)}><Plus size={14} /></button>
+                        <div className="item-price">{Number(item.price * item.quantity).toFixed(2)}</div>
+                        <button className="remove-btn" onClick={() => removeCartItem(idx)}><X size={16} /></button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="cart-summary">
+                <div className="summary-total">
+                  <span>Total</span>
+                  <span>{formattedTotal} MZN</span>
+                </div>
+              </div>
+
+              <div className="mobile-cart-actions">
+                <button 
+                  className="mobile-pay-btn pay-cash" 
+                  disabled={cart.length === 0 || isProcessing}
+                  onClick={() => { handleCheckout('Dinheiro'); setIsMobileCartOpen(false); }}
+                >
+                  <Banknote size={16} />
+                  Dinheiro
+                </button>
+                <button 
+                  className="mobile-pay-btn pay-mpesa" 
+                  disabled={cart.length === 0 || isProcessing}
+                  onClick={() => { handleCheckout('M-Pesa'); setIsMobileCartOpen(false); }}
+                >
+                  <CreditCard size={16} />
+                  M-Pesa
+                </button>
+                <button 
+                  className="mobile-pay-btn pay-cancel" 
+                  disabled={cart.length === 0}
+                  onClick={() => { setCart([]); setIsMobileCartOpen(false); }}
+                >
+                  <X size={16} />
+                  Limpar
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Product Selection Modal */}
       <AnimatePresence>

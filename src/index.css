@@ -124,6 +124,19 @@ button:active {
   gap: 12px;
   height: 140px;
   color: var(--text-dark);
+  overflow: hidden;
+}
+
+.product-btn span {
+  text-align: center;
+  word-break: break-word;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  line-height: 1.2;
+  max-width: 100%;
+  font-size: 13px;
 }
 
 .product-btn:hover {
@@ -404,6 +417,41 @@ button:active {
 }
 
 /* ============================================ */
+/* POS HEADER                                   */
+/* ============================================ */
+.pos-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pos-dashboard-btn {
+  background-color: rgba(255, 255, 255, 0.15);
+  color: white;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pos-dashboard-btn:hover {
+  background-color: rgba(255, 255, 255, 0.25);
+}
+
+/* ============================================ */
+/* MOBILE CART FAB & PANEL (Oculto no Desktop)  */
+/* ============================================ */
+.mobile-cart-fab {
+  display: none;
+}
+
+.mobile-cart-overlay {
+  display: none;
+}
+
+/* ============================================ */
 /* RESPONSIVIDADE - POS (PONTO DE VENDA)        */
 /* ============================================ */
 
@@ -428,14 +476,14 @@ button:active {
   .product-btn span {
     font-size: 14px;
   }
-  .cart-section {
+  .cart-desktop {
     flex: unset;
     border-left: none;
     border-right: none;
     border-top: 1px solid var(--border);
     max-height: 35vh;
   }
-  .payment-section {
+  .payment-desktop {
     flex: unset;
     flex-direction: row;
     padding: 12px;
@@ -455,22 +503,20 @@ button:active {
     overflow: auto !important;
   }
   .pos-container {
-    height: auto;
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
+    position: relative;
   }
   .pos-header {
     height: 56px;
     padding: 0 12px;
-    flex-wrap: wrap;
     gap: 8px;
   }
-  .pos-header > div:first-child {
-    font-size: 18px;
+  .pos-header-left > div {
+    font-size: 16px !important;
   }
   .search-bar {
-    max-width: 100%;
-    order: 2;
-    width: 100%;
+    flex: 1;
   }
   .search-input {
     padding: 10px 12px 10px 40px;
@@ -478,14 +524,17 @@ button:active {
   }
   .pos-main {
     flex-direction: column;
-    overflow: auto;
+    overflow: hidden;
   }
+
+  /* Produtos ocupam TODA a tela */
   .products-section {
-    flex: unset;
+    flex: 1;
     max-height: none;
     grid-template-columns: repeat(3, 1fr);
     gap: 10px;
     padding: 12px;
+    overflow-y: auto;
   }
   .product-btn {
     height: 100px;
@@ -499,55 +548,158 @@ button:active {
     width: 24px;
     height: 24px;
   }
-  .cart-section {
-    flex: unset;
-    border-left: none;
-    border-right: none;
-    border-top: 1px solid var(--border);
+
+  /* Esconder Carrinho e Pagamento desktop no mobile */
+  .cart-desktop,
+  .payment-desktop {
+    display: none !important;
   }
-  .cart-header {
-    padding: 12px 16px;
-    font-size: 16px;
+
+  /* Botão Flutuante do Carrinho */
+  .mobile-cart-fab {
+    display: flex;
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background-color: var(--success);
+    color: white;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 24px rgba(23, 130, 54, 0.4);
+    z-index: 50;
+    border: none;
   }
-  .cart-item {
-    padding: 10px 12px;
-    flex-wrap: wrap;
-    gap: 8px;
+
+  .mobile-cart-fab:active {
+    transform: scale(0.95);
   }
-  .cart-item-info {
+
+  .cart-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    background-color: var(--danger);
+    color: white;
+    font-size: 12px;
+    font-weight: 800;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid white;
+  }
+
+  /* Painel Slide-Up do Carrinho */
+  .mobile-cart-overlay {
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 60;
+    align-items: flex-end;
+  }
+
+  .mobile-cart-panel {
     width: 100%;
+    background: var(--bg-surface);
+    border-radius: 20px 20px 0 0;
+    max-height: 85vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
-  .cart-item-title {
+
+  .mobile-cart-handle {
+    display: flex;
+    justify-content: center;
+    padding: 12px 0 4px;
+  }
+
+  .handle-bar {
+    width: 40px;
+    height: 4px;
+    background-color: var(--border);
+    border-radius: 2px;
+  }
+
+  .mobile-cart-panel .cart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .mobile-cart-panel .cart-item {
+    padding: 10px 16px;
+  }
+
+  .mobile-cart-panel .cart-item-title {
     font-size: 14px;
   }
-  .cart-item-brand {
+  .mobile-cart-panel .cart-item-brand {
     font-size: 12px;
   }
-  .cart-item-controls {
-    width: 100%;
-    justify-content: space-between;
-    gap: 8px;
+  .mobile-cart-panel .cart-item-controls {
+    gap: 6px;
   }
-  .item-price {
+  .mobile-cart-panel .item-price {
+    font-size: 13px;
     min-width: auto;
-    font-size: 14px;
   }
-  .cart-summary {
-    padding: 12px 16px;
+
+  .mobile-cart-panel .cart-summary {
+    padding: 12px 20px;
   }
-  .summary-total {
-    font-size: 20px;
+  .mobile-cart-panel .summary-total {
+    font-size: 18px;
   }
-  .payment-section {
-    flex: unset;
-    flex-direction: column;
-    padding: 12px;
+
+  /* Botões de Pagamento em linha, compactos */
+  .mobile-cart-actions {
+    display: flex;
     gap: 8px;
+    padding: 12px 16px 20px;
+    border-top: 1px solid var(--border);
   }
-  .pay-btn {
-    padding: 14px;
-    font-size: 16px;
+
+  .mobile-pay-btn {
+    flex: 1;
+    padding: 10px 6px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: none;
   }
+
+  .mobile-pay-btn.pay-cash {
+    background-color: var(--success);
+    color: white;
+  }
+  .mobile-pay-btn.pay-mpesa {
+    background-color: var(--primary);
+    color: white;
+  }
+  .mobile-pay-btn.pay-cancel {
+    background-color: var(--bg-main);
+    color: var(--danger);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+
   .modal {
     width: 95%;
     padding: 16px;
@@ -570,3 +722,4 @@ button:active {
     font-size: 36px;
   }
 }
+
