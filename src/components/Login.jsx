@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Store, User, Mail, Lock, LogIn, UserPlus } from 'lucide-react';
+import { Store, User, Mail, Lock, LogIn, UserPlus, X, CheckCircle, XCircle, Info } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import './Login.css';
 
@@ -16,6 +16,14 @@ export default function Login() {
   const [isLogin, setIsLogin] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+
+  // Toast State
+  const [toast, setToast] = useState(null);
+  
+  const showToast = (message, type = 'success', title = '') => {
+    setToast({ message, type, title: title || (type === 'success' ? 'Sucesso' : type === 'error' ? 'Erro' : 'Informação') });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   const [formData, setFormData] = useState({
     name: '',
@@ -44,13 +52,13 @@ export default function Login() {
           }
         });
         if (error) throw error;
-        alert('Conta de gestor criada com sucesso! Já pode fazer login.');
+        showToast('Conta criada com sucesso! Já pode fazer login.');
         setIsLogin(true);
       }
     } catch (err) {
-      alert(err.message === 'Invalid login credentials' 
+      showToast(err.message === 'Invalid login credentials' 
             ? 'Credenciais inválidas. Verifique o seu e-mail e palavra-passe.' 
-            : err.message || 'Ocorreu um erro durante a autenticação.');
+            : err.message || 'Ocorreu um erro durante a autenticação.', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -186,6 +194,29 @@ export default function Login() {
 
         </div>
       </div>
+
+      {/* Global Toast Notification */}
+      {toast && (
+        <div className="toast-container">
+          <div className={`toast ${toast.type}`}>
+            <div className="toast-icon">
+              {toast.type === 'success' && <CheckCircle size={24} />}
+              {toast.type === 'error' && <XCircle size={24} />}
+              {toast.type === 'info' && <Info size={24} />}
+            </div>
+            <div className="toast-content">
+              <div className="toast-title">{toast.title}</div>
+              <div className="toast-message">{toast.message}</div>
+            </div>
+            <button className="toast-close" onClick={() => setToast(null)}>
+              <X size={16} />
+            </button>
+            <div className="toast-progress">
+              <div className="toast-progress-bar" />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, ShoppingCart, Plus, Minus, X, CreditCard, Banknote, Box, Package, Coffee, Droplet, ShoppingBag, Wine, Milk, LayoutDashboard } from 'lucide-react';
+import { Search, ShoppingCart, Plus, Minus, X, CreditCard, Banknote, Box, Package, Coffee, Droplet, ShoppingBag, Wine, Milk, LayoutDashboard, CheckCircle, XCircle, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 
@@ -28,6 +28,14 @@ export default function POS() {
   const [activeProduct, setActiveProduct] = useState(null);
   const [selectedBrand, setSelectedBrand] = useState(null);
   const [quantity, setQuantity] = useState(1);
+
+  // Toast State
+  const [toast, setToast] = useState(null);
+  
+  const showToast = (message, type = 'success', title = '') => {
+    setToast({ message, type, title: title || (type === 'success' ? 'Sucesso' : type === 'error' ? 'Erro' : 'Informação') });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   // Fetch Data from Supabase
   useEffect(() => {
@@ -183,12 +191,33 @@ export default function POS() {
 
       if (itemsError) throw itemsError;
 
+      // 3. Update Stock for each item in parallel for speed
+      await Promise.all(cart.map(async (item) => {
+          try {
+              const { data: currentItem } = await supabase
+                  .from('brands')
+                  .select('stock')
+                  .eq('id', item.brandId)
+                  .single();
+              
+              if (currentItem) {
+                  const newStock = Math.max(0, Number(currentItem.stock) - Number(item.quantity));
+                  await supabase
+                      .from('brands')
+                      .update({ stock: newStock })
+                      .eq('id', item.brandId);
+              }
+          } catch (err) {
+              console.error("Error updating item stock:", err);
+          }
+      }));
+
       // Reset cart on success
       setCart([]);
-      alert(`Venda finalizada via ${paymentMethod}! (ID: ${saleData.id})`);
+      showToast(`Venda finalizada! ID: ${saleData.id}`, 'success', 'Venda Concluída');
     } catch (error) {
       console.error("Error saving sale:", error);
-      alert("Houve um erro ao processar a venda.");
+      showToast("Erro ao processar a venda.", "error");
     } finally {
       setIsProcessing(false);
     }
@@ -570,6 +599,29 @@ export default function POS() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Global Toast Notification */}
+      {toast && (
+        <div className="toast-container">
+          <div className={`toast ${toast.type}`}>
+            <div className="toast-icon">
+              {toast.type === 'success' && <CheckCircle size={24} />}
+              {toast.type === 'error' && <XCircle size={24} />}
+              {toast.type === 'info' && <Info size={24} />}
+            </div>
+            <div className="toast-content">
+              <div className="toast-title">{toast.title}</div>
+              <div className="toast-message">{toast.message}</div>
+            </div>
+            <button className="toast-close" onClick={() => setToast(null)}>
+              <X size={16} />
+            </button>
+            <div className="toast-progress">
+              <div className="toast-progress-bar" />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

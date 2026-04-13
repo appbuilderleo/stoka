@@ -29,7 +29,10 @@ import {
   MapPin,
   Hash,
   Menu,
-  X
+  X,
+  CheckCircle,
+  XCircle,
+  Info
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
@@ -55,6 +58,15 @@ export default function Dashboard() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [selectedUpgradePlan, setSelectedUpgradePlan] = useState(null);
   const [isProcessingSubscription, setIsProcessingSubscription] = useState(false);
+  const [billingCycle, setBillingCycle] = useState('mensal'); // 'mensal', 'trimestral', 'semestral', 'anual'
+
+  // Toast State
+  const [toast, setToast] = useState(null); // { message, type: 'success' | 'error' | 'info', title }
+  
+  const showToast = (message, type = 'success', title = '') => {
+    setToast({ message, type, title: title || (type === 'success' ? 'Sucesso' : type === 'error' ? 'Erro' : 'Informação') });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   // Modal States
   const [showProductModal, setShowProductModal] = useState(false);
@@ -87,7 +99,7 @@ export default function Dashboard() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        alert("Sessão inválida. Faça login novamente.");
+        showToast("Sessão inválida. Faça login novamente.", "error");
         return;
       }
 
@@ -123,9 +135,9 @@ export default function Dashboard() {
         if (storeError) throw storeError;
       }
       
-      alert('Configurações da loja salvas com sucesso no banco de dados!');
+      showToast('Configurações da loja salvas com sucesso!');
     } catch (err) {
-      alert(`Erro ao guardar: ${err.message}`);
+      showToast(`Erro ao guardar: ${err.message}`, 'error');
     } finally {
       setIsSavingSettings(false);
     }
@@ -133,6 +145,19 @@ export default function Dashboard() {
 
   const handleAddProduct = async () => {
     if (!newProduct.name) return;
+    
+    // Check max products limit based on plan
+    if (currentSubscription) {
+      const maxProducts = currentSubscription.subscription_plans?.max_products;
+      if (maxProducts !== -1 && products.length >= maxProducts) {
+        showToast(`O seu plano permite no máximo ${maxProducts} categorias. Faça upgrade!`, 'error');
+        return;
+      }
+    } else {
+      showToast("Sem assinatura ativa. Vá à aba de Assinaturas.", 'error');
+      return;
+    }
+
     setIsSaving(true);
     try {
       // Verifica se a Categoria já existe NESTA LOJA (ignorando maiúsculas e minúsculas)
@@ -143,7 +168,7 @@ export default function Dashboard() {
         .ilike('name', newProduct.name);
 
       if (exist && exist.length > 0) {
-        alert('Este Produto/Categoria já existe na sua loja! Não é possível duplicar.');
+        showToast('Este Produto/Categoria já existe!', 'info');
         setIsSaving(false);
         return;
       }
@@ -156,7 +181,7 @@ export default function Dashboard() {
       if (products.length === 0) setNewBrand({ ...newBrand, product_id: data[0].id });
     } catch (err) {
       console.error(err);
-      alert('Erro ao salvar produto');
+      showToast('Erro ao salvar produto', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -164,7 +189,7 @@ export default function Dashboard() {
 
   const handleAddBrand = async () => {
     if (!newBrand.product_id || !newBrand.name || !newBrand.price || !newBrand.stock) {
-      alert("Preencha todos os campos!");
+      showToast("Preencha todos os campos!", 'info');
       return;
     }
     setIsSaving(true);
@@ -198,10 +223,22 @@ export default function Dashboard() {
         
         // Atualiza a tabela na UI
         setBrands(brands.map(b => b.id === existingItem.id ? data[0] : b));
-        alert(`O item '${existingItem.name}' já existia! O seu stock foi atualizado para ${novoStock} unidades.`);
+        showToast(`Stock de '${existingItem.name}' atualizado para ${novoStock}!`);
 
       } else {
         // Não existe, cria um registo totalmente novo
+        // Verifica o limite de marcas antes de adicionar nova
+        if (currentSubscription) {
+          const maxBrands = currentSubscription.subscription_plans?.max_brands;
+          if (maxBrands !== -1 && brands.length >= maxBrands) {
+             showToast(`O seu plano permite no máximo ${maxBrands} marcas. Faça upgrade!`, 'error');
+             return;
+          }
+        } else {
+          showToast("Sem assinatura ativa. Vá à aba de Assinaturas.", 'error');
+          return;
+        }
+
         const { data, error } = await supabase.from('brands').insert([{
           product_id: Number(newBrand.product_id),
           name: newBrand.name,
@@ -212,14 +249,14 @@ export default function Dashboard() {
         
         if (error) throw error;
         setBrands([...brands, data[0]]);
-        alert('Novo item de venda registado com sucesso!');
+        showToast('Novo item registado com sucesso!');
       }
 
       setShowBrandModal(false);
       setNewBrand({ product_id: products[0]?.id || '', name: '', price: '', stock: '' });
     } catch (err) {
       console.error(err);
-      alert('Erro ao salvar marca/variação');
+      showToast('Erro ao salvar marca', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -227,7 +264,7 @@ export default function Dashboard() {
   
   const openBrandModal = () => {
     if (products.length === 0) {
-      alert("Crie um Produto/Categoria Primeiro (Ex: Arroz) antes de registar o stock!");
+      showToast("Crie um Produto Primeiro!", 'info');
       return;
     }
     setNewBrand({ ...newBrand, product_id: products[0].id });
@@ -236,7 +273,7 @@ export default function Dashboard() {
 
   const openReinforceStockModal = () => {
     if (brands.length === 0) {
-      alert("Ainda não tem marcas/itens registados. Registe primeiro!");
+      showToast("Registe primeiro um item!", 'info');
       return;
     }
     setReinforceStockData({ brand_id: brands[0].id, added_stock: '', new_price: brands[0].price });
@@ -255,7 +292,7 @@ export default function Dashboard() {
 
   const handleReinforceStock = async () => {
     if (!reinforceStockData.brand_id || !reinforceStockData.added_stock) {
-      alert("Selecione a marca e informe a quantidade a adicionar!");
+      showToast("Selecione a marca e a quantidade!", 'info');
       return;
     }
     
@@ -279,25 +316,76 @@ export default function Dashboard() {
       if (error) throw error;
       
       setBrands(brands.map(b => b.id === brandToUpdate.id ? data[0] : b));
-      alert(`Stock de '${brandToUpdate.name}' reforçado com sucesso! Novo stock: ${novoStock}`);
+      showToast(`Stock de '${brandToUpdate.name}' reforçado!`);
       
       setShowReinforceStockModal(false);
       setReinforceStockData({ brand_id: '', added_stock: '', new_price: '' });
     } catch (err) {
       console.error(err);
-      alert('Erro ao reforçar stock');
+      showToast('Erro ao reforçar stock', 'error');
     } finally {
       setIsSaving(false);
     }
   };
 
+  const getSubscriptionData = (basePrice, cycle) => {
+    const cycles = {
+      mensal: { months: 1, label: 'Mensal', discount: 0 },
+      trimestral: { months: 3, label: 'Trimestral (-5%)', discount: 0.05 },
+      semestral: { months: 6, label: 'Semestral (-10%)', discount: 0.10 },
+      anual: { months: 12, label: 'Anual (-20%)', discount: 0.20 }
+    };
+    const c = cycles[cycle] || cycles.mensal;
+    const totalAmount = basePrice * c.months * (1 - c.discount);
+    return {
+      totalAmount,
+      months: c.months,
+      label: c.label,
+      discount: c.discount
+    };
+  };
+
+  const getPlanRank = (planName) => {
+    const ranks = { 'Básico': 1, 'Profissional': 2, 'Empresarial': 3 };
+    return ranks[planName] || 0;
+  };
+
   // --- Subscription Handlers ---
   const handleRenewSubscription = async () => {
     if (!currentSubscription) return;
+    
+    const subData = getSubscriptionData(currentSubscription.subscription_plans.price, billingCycle);
+    
     setIsProcessingSubscription(true);
     try {
+      // Call our backend endpoint that integrates with Paysuite checkout
+      const response = await fetch('/api/payments/paysuite/initiate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: subData.totalAmount,
+          storeId: currentStoreId,
+          planId: currentSubscription.plan_id
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Falha ao comunicar com a Paysuite');
+      }
+
+      const payloadResp = await response.json();
+      // Paysuite returns: { status: 'success', data: { checkout_url, ... } }
+      const redirectUrl = payloadResp.data?.checkout_url || payloadResp.data?.redirect_url || payloadResp.data?.link || payloadResp.checkout_url || payloadResp.redirect_url;
+
+      if (redirectUrl) {
+          window.location.href = redirectUrl;
+          return; // Para aqui pois o usuario foi redirecionado
+      }
+
+      showToast(`O checkout foi iniciado! Verifique o painel Paysuite.`, 'info');
+
       const nextDate = new Date(currentSubscription.next_billing_date);
-      nextDate.setMonth(nextDate.getMonth() + 1);
+      nextDate.setMonth(nextDate.getMonth() + subData.months);
       
       const { data, error } = await supabase
         .from('subscriptions')
@@ -305,7 +393,7 @@ export default function Dashboard() {
           status: 'active',
           last_payment_date: new Date().toISOString().split('T')[0],
           next_billing_date: nextDate.toISOString().split('T')[0],
-          amount_paid: currentSubscription.amount_paid
+          amount_paid: subData.totalAmount
         })
         .eq('id', currentSubscription.id)
         .select('*, subscription_plans(*)');
@@ -313,42 +401,91 @@ export default function Dashboard() {
       if (error) throw error;
       setCurrentSubscription(data[0]);
       setShowRenewModal(false);
-      alert('Assinatura renovada com sucesso!');
+      showToast('Assinatura renovada com sucesso!');
     } catch (err) {
       console.error(err);
-      alert('Erro ao renovar assinatura.');
+      showToast('Erro ao renovar assinatura.', 'error');
     } finally {
       setIsProcessingSubscription(false);
     }
   };
 
-  const handleUpgradePlan = async () => {
-    if (!currentSubscription || !selectedUpgradePlan) return;
+  const handleUpgradePlan = async (e) => {
+    if (e) e.preventDefault();
+    if (!selectedUpgradePlan) return;
+    
+    const subData = getSubscriptionData(selectedUpgradePlan.price, billingCycle);
+
     setIsProcessingSubscription(true);
     try {
-      const nextDate = new Date();
-      nextDate.setMonth(nextDate.getMonth() + 1);
-
-      const { data, error } = await supabase
-        .from('subscriptions')
-        .update({
-          plan_id: selectedUpgradePlan.id,
-          status: 'active',
-          last_payment_date: new Date().toISOString().split('T')[0],
-          next_billing_date: nextDate.toISOString().split('T')[0],
-          amount_paid: Number(selectedUpgradePlan.price)
+      // Call our backend endpoint that integrates with Paysuite checkout
+      const response = await fetch('/api/payments/paysuite/initiate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: subData.totalAmount,
+          storeId: currentStoreId,
+          planId: selectedUpgradePlan.id
         })
-        .eq('id', currentSubscription.id)
-        .select('*, subscription_plans(*)');
+      });
 
-      if (error) throw error;
-      setCurrentSubscription(data[0]);
+      if (!response.ok) {
+        throw new Error('Falha ao comunicar com a Paysuite');
+      }
+
+      const payloadResp = await response.json();
+      // Paysuite returns: { status: 'success', data: { checkout_url, ... } }
+      const redirectUrl = payloadResp.data?.checkout_url || payloadResp.data?.redirect_url || payloadResp.data?.link || payloadResp.checkout_url || payloadResp.redirect_url;
+
+      if (redirectUrl) {
+          window.location.href = redirectUrl;
+          return; // Para aqui pois o usuario foi redirecionado
+      }
+
+      showToast(`O checkout foi iniciado! Verifique o painel Paysuite.`, 'info');
+
+      const nextDate = new Date();
+      nextDate.setMonth(nextDate.getMonth() + subData.months);
+
+      if (currentSubscription) {
+        const { data, error } = await supabase
+          .from('subscriptions')
+          .update({
+            plan_id: selectedUpgradePlan.id,
+            status: 'active',
+            last_payment_date: new Date().toISOString().split('T')[0],
+            next_billing_date: nextDate.toISOString().split('T')[0],
+            amount_paid: subData.totalAmount
+          })
+          .eq('id', currentSubscription.id)
+          .select('*, subscription_plans(*)');
+  
+        if (error) throw error;
+        setCurrentSubscription(data[0]);
+      } else {
+        const { data, error } = await supabase
+          .from('subscriptions')
+          .insert([{
+            store_name: storeSettings.storeName || 'Loja',
+            store_id: currentStoreId,
+            plan_id: selectedUpgradePlan.id,
+            status: 'active',
+            last_payment_date: new Date().toISOString().split('T')[0],
+            next_billing_date: nextDate.toISOString().split('T')[0],
+            amount_paid: subData.totalAmount
+          }])
+          .select('*, subscription_plans(*)');
+
+        if (error) throw error;
+        setCurrentSubscription(data[0]);
+      }
+      
       setShowUpgradeModal(false);
       setSelectedUpgradePlan(null);
-      alert(`Plano alterado para ${selectedUpgradePlan.name} com sucesso!`);
+      showToast(`Plano ${selectedUpgradePlan.name} activo!`);
     } catch (err) {
       console.error(err);
-      alert('Erro ao alterar plano.');
+      showToast('Erro ao processar assinatura.', 'error');
     } finally {
       setIsProcessingSubscription(false);
     }
@@ -391,7 +528,7 @@ export default function Dashboard() {
 
   const handleExportExcel = () => {
     if (sales.length === 0) {
-      alert("Não há dados para exportar.");
+      showToast("Não há dados para exportar.", 'info');
       return;
     }
 
@@ -413,7 +550,7 @@ export default function Dashboard() {
 
   const handleExportPDF = () => {
     if (sales.length === 0) {
-      alert("Não há dados para exportar.");
+      showToast("Não há dados para exportar.", 'info');
       return;
     }
 
@@ -511,7 +648,13 @@ export default function Dashboard() {
         setIsLoading(false);
       }
     }
+
     fetchData();
+
+    // Re-fetch data when window gains focus (e.g. returning from POS tab)
+    const handleFocus = () => fetchData();
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
   const handleLogout = async () => {
@@ -631,7 +774,20 @@ export default function Dashboard() {
               {activeTab === 'produtos' && (
                 <div className="content-card">
                   <div className="card-header">
-                     <h3>Gestão de Marcas e Produtos</h3>
+                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <h3>Gestão de Marcas e Produtos</h3>
+                        <button 
+                          onClick={() => {
+                            // Using the fetchData defined in useEffect is tricky, 
+                            // so I'll create a reload helper or just trigger a re-mount.
+                            window.location.reload(); 
+                          }}
+                          style={{ background: 'none', border: 'none', color: 'var(--secondary)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
+                          title="Recarregar dados"
+                        >
+                          <RefreshCw size={18} />
+                        </button>
+                     </div>
                      <div className="action-buttons-group">
                        <button className="btn-primary" style={{ backgroundColor: '#f97316' }} onClick={openReinforceStockModal}>
                           <Plus size={18} />
@@ -774,12 +930,40 @@ export default function Dashboard() {
 
                   {/* Plan Comparison Grid */}
                   <div className="content-card">
-                    <div className="card-header">
-                      <h3>Planos Disponíveis</h3>
+                    <div className="card-header" style={{ marginBottom: '24px' }}>
+                      <div style={{ flex: 1 }}>
+                        <h3>Planos Disponíveis</h3>
+                        <p style={{ color: 'var(--secondary)', fontSize: '14px' }}>Selecione o plano ideal para o seu negócio.</p>
+                      </div>
+                      
+                      {/* Sub-period select */}
+                      <div style={{ display: 'flex', backgroundColor: 'var(--bg-main)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                        {['mensal', 'trimestral', 'semestral', 'anual'].map(cycle => (
+                          <button
+                            key={cycle}
+                            onClick={() => setBillingCycle(cycle)}
+                            style={{
+                              padding: '8px 16px',
+                              borderRadius: '8px',
+                              border: 'none',
+                              backgroundColor: billingCycle === cycle ? 'white' : 'transparent',
+                              color: billingCycle === cycle ? 'var(--primary)' : 'var(--secondary)',
+                              fontWeight: '700',
+                              fontSize: '13px',
+                              boxShadow: billingCycle === cycle ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
+                              cursor: 'pointer',
+                              textTransform: 'capitalize'
+                            }}
+                          >
+                            {cycle}
+                          </button>
+                        ))}
+                      </div>
+
                       {currentSubscription && (
                         <button
                           onClick={() => setShowRenewModal(true)}
-                          style={{ backgroundColor: 'var(--success)', color: 'white', padding: '10px 20px', borderRadius: 'var(--radius)', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}
+                          style={{ marginLeft: '16px', backgroundColor: 'var(--success)', color: 'white', padding: '10px 20px', borderRadius: 'var(--radius)', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}
                         >
                           <RefreshCw size={16} />
                           Renovar Plano Atual
@@ -814,8 +998,20 @@ export default function Dashboard() {
                               </div>
                             </div>
                             <div style={{ marginBottom: '20px' }}>
-                              <span style={{ fontSize: '36px', fontWeight: '800', color: planColor.main }}>{Number(plan.price).toFixed(0)}</span>
-                              <span style={{ fontSize: '16px', color: 'var(--secondary)' }}> MZN/mês</span>
+                              {(() => {
+                                const subData = getSubscriptionData(plan.price, billingCycle);
+                                return (
+                                  <>
+                                    <span style={{ fontSize: '36px', fontWeight: '800', color: planColor.main }}>{subData.totalAmount.toFixed(0)}</span>
+                                    <span style={{ fontSize: '16px', color: 'var(--secondary)' }}> MZN / {subData.label.toLowerCase()}</span>
+                                    {billingCycle !== 'mensal' && (
+                                      <div style={{ fontSize: '12px', color: 'var(--success)', fontWeight: '600', marginTop: '4px' }}>
+                                        Equivalente a {(subData.totalAmount / subData.months).toFixed(0)} MZN / mês
+                                      </div>
+                                    )}
+                                  </>
+                                );
+                              })()}
                             </div>
                             <div style={{ fontSize: '14px', color: 'var(--secondary)', marginBottom: '20px', lineHeight: '1.5' }}>
                               {plan.description}
@@ -847,8 +1043,15 @@ export default function Dashboard() {
                               </div>
                             </div>
                             {!isCurrentPlan ? (
-                              <button
-                                onClick={() => openUpgradeModal(plan)}
+                             <button
+                                onClick={() => {
+                                  if (getPlanRank(plan.name) < getPlanRank(currentSubscription?.subscription_plans?.name)) {
+                                    showToast("Downgrades não são permitidos enquanto o plano estiver ativo.", 'info');
+                                    return;
+                                  }
+                                  openUpgradeModal(plan);
+                                }}
+                                disabled={getPlanRank(plan.name) < getPlanRank(currentSubscription?.subscription_plans?.name)}
                                 style={{
                                   width: '100%',
                                   padding: '12px',
@@ -859,13 +1062,14 @@ export default function Dashboard() {
                                   alignItems: 'center',
                                   justifyContent: 'center',
                                   gap: '8px',
-                                  backgroundColor: planColor.main,
-                                  color: 'white',
-                                  transition: 'opacity 0.2s'
+                                  backgroundColor: getPlanRank(plan.name) < getPlanRank(currentSubscription?.subscription_plans?.name) ? '#e2e8f0' : planColor.main,
+                                  color: getPlanRank(plan.name) < getPlanRank(currentSubscription?.subscription_plans?.name) ? '#94a3b8' : 'white',
+                                  transition: 'opacity 0.2s',
+                                  cursor: getPlanRank(plan.name) < getPlanRank(currentSubscription?.subscription_plans?.name) ? 'not-allowed' : 'pointer'
                                 }}
                               >
                                 <ArrowUpCircle size={18} />
-                                {Number(plan.price) > Number(currentSubscription?.subscription_plans?.price || 0) ? 'Fazer Upgrade' : 'Mudar para este plano'}
+                                {getPlanRank(plan.name) > getPlanRank(currentSubscription?.subscription_plans?.name) ? 'Fazer Upgrade' : 'Mudar para este plano'}
                               </button>
                             ) : (
                               <button
@@ -1335,9 +1539,10 @@ export default function Dashboard() {
             <div style={{ backgroundColor: 'var(--bg-surface)', padding: '32px', borderRadius: '16px', width: '480px', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
               {(() => {
                 const planColor = getPlanColor(selectedUpgradePlan.name);
+                const subData = getSubscriptionData(selectedUpgradePlan.price, billingCycle);
                 const currentPrice = Number(currentSubscription?.subscription_plans?.price || 0);
-                const newPrice = Number(selectedUpgradePlan.price);
-                const isUpgrade = newPrice > currentPrice;
+                const newPrice = subData.totalAmount;
+                const isUpgrade = getPlanRank(selectedUpgradePlan.name) > getPlanRank(currentSubscription?.subscription_plans?.name);
                 return (
                   <>
                     <div style={{ textAlign: 'center', marginBottom: '24px' }}>
@@ -1358,23 +1563,21 @@ export default function Dashboard() {
                       <div style={{ flex: 1, backgroundColor: 'var(--bg-main)', borderRadius: 'var(--radius)', padding: '16px', textAlign: 'center', border: '1px solid var(--border)' }}>
                         <div style={{ fontSize: '12px', color: 'var(--secondary)', marginBottom: '8px', textTransform: 'uppercase', fontWeight: '600' }}>Plano Atual</div>
                         <div style={{ fontWeight: '700', fontSize: '16px', marginBottom: '4px' }}>{currentSubscription?.subscription_plans?.name || '—'}</div>
-                        <div style={{ fontWeight: '800', fontSize: '24px', color: 'var(--secondary)' }}>{currentPrice.toFixed(0)} <span style={{ fontSize: '14px' }}>MZN</span></div>
+                        <div style={{ fontWeight: '800', fontSize: '24px', color: 'var(--secondary)' }}>{currentSubscription?.amount_paid || currentPrice} <span style={{ fontSize: '14px' }}>MZN</span></div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', fontSize: '24px', color: planColor.main }}>→</div>
                       <div style={{ flex: 1, backgroundColor: planColor.bg, borderRadius: 'var(--radius)', padding: '16px', textAlign: 'center', border: `2px solid ${planColor.main}` }}>
-                        <div style={{ fontSize: '12px', color: planColor.main, marginBottom: '8px', textTransform: 'uppercase', fontWeight: '600' }}>Novo Plano</div>
+                        <div style={{ fontSize: '12px', color: planColor.main, marginBottom: '8px', textTransform: 'uppercase', fontWeight: '600' }}>Novo Plano ({subData.label})</div>
                         <div style={{ fontWeight: '700', fontSize: '16px', marginBottom: '4px' }}>{selectedUpgradePlan.name}</div>
                         <div style={{ fontWeight: '800', fontSize: '24px', color: planColor.main }}>{newPrice.toFixed(0)} <span style={{ fontSize: '14px' }}>MZN</span></div>
                       </div>
                     </div>
 
-                    {isUpgrade && (
-                      <div style={{ backgroundColor: '#eefdf4', border: '1px solid #bbf7d0', borderRadius: 'var(--radius)', padding: '12px 16px', marginBottom: '24px', textAlign: 'center' }}>
-                        <span style={{ color: '#166534', fontWeight: '600', fontSize: '14px' }}>
-                          Diferença: +{(newPrice - currentPrice).toFixed(0)} MZN/mês
-                        </span>
-                      </div>
-                    )}
+                    <div style={{ backgroundColor: '#eefdf4', border: '1px solid #bbf7d0', borderRadius: 'var(--radius)', padding: '12px 16px', marginBottom: '24px', textAlign: 'center' }}>
+                      <span style={{ color: '#166534', fontWeight: '600', fontSize: '14px' }}>
+                        Cobrança única de {newPrice.toFixed(0)} MZN para {subData.months} mês(es)
+                      </span>
+                    </div>
 
                     <div style={{ display: 'flex', gap: '12px' }}>
                       <button
@@ -1399,6 +1602,29 @@ export default function Dashboard() {
                   </>
                 );
               })()}
+            </div>
+          </div>
+        )}
+
+        {/* Global Toast Notification */}
+        {toast && (
+          <div className="toast-container">
+            <div className={`toast ${toast.type}`}>
+              <div className="toast-icon">
+                {toast.type === 'success' && <CheckCircle size={24} />}
+                {toast.type === 'error' && <XCircle size={24} />}
+                {toast.type === 'info' && <Info size={24} />}
+              </div>
+              <div className="toast-content">
+                <div className="toast-title">{toast.title}</div>
+                <div className="toast-message">{toast.message}</div>
+              </div>
+              <button className="toast-close" onClick={() => setToast(null)}>
+                <X size={16} />
+              </button>
+              <div className="toast-progress">
+                <div className="toast-progress-bar" />
+              </div>
             </div>
           </div>
         )}
