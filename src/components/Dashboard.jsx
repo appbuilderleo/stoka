@@ -809,7 +809,9 @@ export default function Dashboard() {
 
       <aside className={`sidebar ${isMobileMenuOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
-          <div className="sidebar-logo">KaziHub Admin</div>
+          <div className="sidebar-logo">
+            <img src="/kazilogoadmin.png" alt="KaziHub Logo" style={{ height: '40px', width: 'auto' }} />
+          </div>
           <button className="mobile-close-btn" onClick={() => setIsMobileMenuOpen(false)}>
             <X size={24} />
           </button>

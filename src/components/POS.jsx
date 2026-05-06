@@ -284,8 +284,8 @@ export default function POS() {
           <button className="pos-dashboard-btn" onClick={() => navigate('/dashboard')}>
             <LayoutDashboard size={20} />
           </button>
-          <div style={{ fontSize: '20px', fontWeight: '800', letterSpacing: '-1px' }}>
-            KaziHub
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <img src="/kazilogo.png" alt="KaziHub Logo" style={{ height: '24px', width: 'auto' }} />
           </div>
         </div>
         <div className="search-bar">

@@ -73,11 +73,8 @@ export default function Login() {
         <div className="glow-2"></div>
         
         <div className="login-branding-content">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px' }}>
-            <div style={{ backgroundColor: '#178236', borderRadius: '12px', padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Store size={32} color="white" />
-            </div>
-            <h1 style={{ fontSize: '32px', fontWeight: '900', letterSpacing: '-1px', margin: 0 }}>KaziHub</h1>
+          <div style={{ marginBottom: '32px' }}>
+            <img src="/kazilogo.png" alt="KaziHub Logo" style={{ height: '50px', width: 'auto', display: 'block' }} />
           </div>
           <h2>
             Kazi· Controla o teu negócio

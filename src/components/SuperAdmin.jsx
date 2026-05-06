@@ -231,11 +231,8 @@ export default function SuperAdmin() {
   return (
     <div className="super-admin-container">
       <aside className="sidebar">
-        <div className="sidebar-header" style={{ backgroundColor: '#1A1A2E', color: 'white' }}>
-          <div className="sidebar-logo" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Shield size={24} color="#f59e0b" />
-            SuperAdmin
-          </div>
+        <div className="sidebar-header" style={{ backgroundColor: '#1A1A2E', color: 'white', padding: '20px' }}>
+          <img src="/kazilogoadmin.png" alt="KaziHub Logo" style={{ height: '40px', width: 'auto' }} />
         </div>
         
         <nav className="sidebar-nav">
