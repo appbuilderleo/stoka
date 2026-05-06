@@ -4,6 +4,18 @@ import { Search, ShoppingCart, Plus, Minus, X, CreditCard, Banknote, Box, Packag
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 
+// Custom icon for Grains (pile of grains)
+const GrainsIcon = ({ size, color, fill }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={fill || 'none'} stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="18" r="1.5" fill={fill} />
+    <circle cx="9" cy="18.5" r="1.5" fill={fill} />
+    <circle cx="15" cy="18.5" r="1.5" fill={fill} />
+    <circle cx="10.5" cy="15.5" r="1.5" fill={fill} />
+    <circle cx="13.5" cy="15.5" r="1.5" fill={fill} />
+    <circle cx="12" cy="13" r="1.5" fill={fill} />
+  </svg>
+);
+
 // Helper for dynamic icons
 const getIconProps = (name) => {
   const map = {
@@ -17,7 +29,7 @@ const getIconProps = (name) => {
     Beef: { icon: Beef, color: '#b91c1c', fill: '#fef2f2', bg: '#fff1f1' }, // Red (Meat)
     Drumstick: { icon: Drumstick, color: '#d97706', fill: '#fffbeb', bg: '#fff8e1' }, // Orange (Chicken)
     Fish: { icon: Fish, color: '#0891b2', fill: '#ecfeff', bg: '#f0fdff' }, // Cyan (Fish)
-    Bean: { icon: Bean, color: '#78350f', fill: '#fef3c7', bg: '#fffaf0' }, // Brown (Grains/Beans)
+    Bean: { icon: GrainsIcon, color: '#78350f', fill: '#fef3c7', bg: '#fffaf0' }, // Brown (Grains/Beans)
     Wheat: { icon: Wheat, color: '#ca8a04', fill: '#fefce8', bg: '#fffdf0' }, // Gold (Wheat/Flour)
     CupSoda: { icon: CupSoda, color: '#db2777', fill: '#fdf2f8', bg: '#fff0f6' }, // Pink (Soda)
     GlassWater: { icon: GlassWater, color: '#2563eb', fill: '#eff6ff', bg: '#f0f7ff' }, // Blue (Oil/Water)
