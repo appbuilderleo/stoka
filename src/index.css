@@ -291,12 +291,30 @@ button:active {
 }
 
 .pay-mpesa {
-  background-color: var(--primary);
+  background-color: var(--danger);
   color: white;
 }
 
 .pay-mpesa:hover {
-  background-color: #2a2a4a;
+  background-color: var(--danger-hover);
+}
+
+.pay-emola {
+  background-color: #f97316;
+  color: #1A1A2E;
+}
+
+.pay-emola:hover {
+  background-color: #ea580c;
+}
+
+.pay-mkesh {
+  background-color: #eab308;
+  color: #178236;
+}
+
+.pay-mkesh:hover {
+  background-color: #ca8a04;
 }
 
 .pay-cancel {
@@ -694,8 +712,16 @@ button:active {
     color: white;
   }
   .mobile-pay-btn.pay-mpesa {
-    background-color: var(--primary);
+    background-color: var(--danger);
     color: white;
+  }
+  .mobile-pay-btn.pay-emola {
+    background-color: #f97316;
+    color: #1A1A2E;
+  }
+  .mobile-pay-btn.pay-mkesh {
+    background-color: #eab308;
+    color: #178236;
   }
   .mobile-pay-btn.pay-cancel {
     background-color: var(--bg-main);

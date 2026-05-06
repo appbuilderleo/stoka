@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, ShoppingCart, Plus, Minus, X, CreditCard, Banknote, Box, Package, Coffee, Droplet, ShoppingBag, Wine, Milk, LayoutDashboard, CheckCircle, XCircle, Info, Beef, Drumstick, Fish, Bean, Wheat, CupSoda, GlassWater, Wallet, Sparkles } from 'lucide-react';
+import { Search, ShoppingCart, Plus, Minus, X, CreditCard, Banknote, Box, Package, Coffee, Droplet, ShoppingBag, Wine, Milk, LayoutDashboard, CheckCircle, XCircle, Info, Beef, Drumstick, Fish, Bean, Wheat, CupSoda, GlassWater, Wallet, Sparkles, Smartphone } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 
@@ -417,8 +417,26 @@ export default function POS() {
             disabled={cart.length === 0 || isProcessing}
             onClick={() => handleCheckout('M-Pesa')}
           >
-            <CreditCard size={28} />
+            <Smartphone size={28} />
             <span>{isProcessing ? 'Processando...' : 'M-Pesa'}</span>
+          </button>
+          
+          <button 
+            className="pay-btn pay-emola" 
+            disabled={cart.length === 0 || isProcessing}
+            onClick={() => handleCheckout('E-Mola')}
+          >
+            <Smartphone size={28} />
+            <span>{isProcessing ? 'Processando...' : 'E-Mola'}</span>
+          </button>
+
+          <button 
+            className="pay-btn pay-mkesh" 
+            disabled={cart.length === 0 || isProcessing}
+            onClick={() => handleCheckout('M-Kesh')}
+          >
+            <Smartphone size={28} />
+            <span>{isProcessing ? 'Processando...' : 'M-Kesh'}</span>
           </button>
           
           <button 
@@ -517,8 +535,24 @@ export default function POS() {
                   disabled={cart.length === 0 || isProcessing}
                   onClick={() => { handleCheckout('M-Pesa'); setIsMobileCartOpen(false); }}
                 >
-                  <CreditCard size={16} />
+                  <Smartphone size={16} />
                   M-Pesa
+                </button>
+                <button 
+                  className="mobile-pay-btn pay-emola" 
+                  disabled={cart.length === 0 || isProcessing}
+                  onClick={() => { handleCheckout('E-Mola'); setIsMobileCartOpen(false); }}
+                >
+                  <Smartphone size={16} />
+                  E-Mola
+                </button>
+                <button 
+                  className="mobile-pay-btn pay-mkesh" 
+                  disabled={cart.length === 0 || isProcessing}
+                  onClick={() => { handleCheckout('M-Kesh'); setIsMobileCartOpen(false); }}
+                >
+                  <Smartphone size={16} />
+                  M-Kesh
                 </button>
                 <button 
                   className="mobile-pay-btn pay-cancel" 
