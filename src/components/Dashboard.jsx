@@ -564,7 +564,7 @@ export default function Dashboard() {
     const exportData = sales.map(sale => ({
       'ID Venda': `#${String(sale.id).padStart(5, '0')}`,
       'Data e Hora': new Date(sale.created_at).toLocaleString('pt-MZ'),
-      'Método de Pagamento': sale.payment_method === 'mpesa' ? 'M-Pesa' : 'Dinheiro',
+      'Método de Pagamento': sale.payment_method,
       'Valor Total (MZN)': Number(sale.total)
     }));
 
@@ -602,7 +602,7 @@ export default function Dashboard() {
       const saleData = [
         `#${String(sale.id).padStart(5, '0')}`,
         new Date(sale.created_at).toLocaleString('pt-MZ'),
-        sale.payment_method === 'mpesa' ? 'M-Pesa' : 'Dinheiro',
+        sale.payment_method,
         Number(sale.total).toFixed(2)
       ];
       tableRows.push(saleData);
@@ -1264,8 +1264,10 @@ export default function Dashboard() {
                             style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none', backgroundColor: 'var(--bg-surface)' }}
                           >
                             <option value="all">Todos Pagamentos</option>
-                            <option value="mpesa">M-Pesa</option>
-                            <option value="dinheiro">Dinheiro</option>
+                            <option value="Dinheiro">Dinheiro</option>
+                            <option value="M-Pesa">M-Pesa</option>
+                            <option value="E-Mola">E-Mola</option>
+                            <option value="M-Kesh">M-Kesh</option>
                           </select>
                           <select 
                             value={reportFilterDate}
@@ -1303,7 +1305,7 @@ export default function Dashboard() {
                         }
 
                         if (reportFilterPayment !== 'all') {
-                          filteredSales = filteredSales.filter(s => s.payment_method === reportFilterPayment);
+                          filteredSales = filteredSales.filter(s => s.payment_method?.toLowerCase() === reportFilterPayment.toLowerCase());
                         }
 
                         const totalRev = filteredSales.reduce((acc, s) => acc + Number(s.total), 0);
@@ -1312,12 +1314,10 @@ export default function Dashboard() {
                         // Prepare chart data (Group by Date)
                         const chartDataMap = {};
                         filteredSales.forEach(s => {
-                           const d = new Date(s.created_at).toLocaleDateString('pt-MZ', { day: '2-digit', month: 'short' });
-                           if (!chartDataMap[d]) chartDataMap[d] = { date: d, total: 0, mpesa: 0, dinheiro: 0 };
-                           chartDataMap[d].total += Number(s.total);
-                           if (s.payment_method === 'mpesa') chartDataMap[d].mpesa += Number(s.total);
-                           else chartDataMap[d].dinheiro += Number(s.total);
-                        });
+                            const d = new Date(s.created_at).toLocaleDateString('pt-MZ', { day: '2-digit', month: 'short' });
+                            if (!chartDataMap[d]) chartDataMap[d] = { date: d, total: 0 };
+                            chartDataMap[d].total += Number(s.total);
+                         });
                         const chartData = Object.values(chartDataMap).reverse();
 
                         return (
@@ -1395,8 +1395,15 @@ export default function Dashboard() {
                                       <tr key={sale.id}>
                                         <td style={{ color: 'var(--secondary)' }}>#{String(sale.id).padStart(5, '0')}</td>
                                         <td>{new Date(sale.created_at).toLocaleString('pt-MZ')}</td>
-                                        <td style={{ textTransform: 'capitalize' }}>
-                                          {sale.payment_method === 'mpesa' ? <span style={{ color: '#ef4444', fontWeight: 'bold' }}>M-Pesa</span> : <span style={{ color: 'var(--success)', fontWeight: 'bold' }}>Dinheiro</span>}
+                                        <td style={{ fontWeight: 'bold' }}>
+                                          {(() => {
+                                            switch(sale.payment_method) {
+                                              case 'M-Pesa': return <span style={{ color: '#ef4444' }}>M-Pesa</span>;
+                                              case 'E-Mola': return <span style={{ color: '#f97316' }}>E-Mola</span>;
+                                              case 'M-Kesh': return <span style={{ color: '#eab308' }}>M-Kesh</span>;
+                                              default: return <span style={{ color: 'var(--success)' }}>Dinheiro</span>;
+                                            }
+                                          })()}
                                         </td>
                                         <td style={{ fontWeight: '700' }}>{Number(sale.total).toFixed(2)} MZN</td>
                                       </tr>
