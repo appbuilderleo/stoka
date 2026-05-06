@@ -246,7 +246,7 @@ export default function Dashboard() {
             price: Number(newBrand.price) 
           })
           .eq('id', existingItem.id)
-          .select('*, products(name)');
+          .select('*, products(id, name, icon)');
           
         if (error) throw error;
         
@@ -274,7 +274,7 @@ export default function Dashboard() {
           price: Number(newBrand.price),
           stock: Number(newBrand.stock),
           store_id: currentStoreId
-        }]).select('*, products(name)');
+        }]).select('*, products(id, name, icon)');
         
         if (error) throw error;
         setBrands([...brands, data[0]]);
@@ -662,7 +662,7 @@ export default function Dashboard() {
 
         const [productsRes, brandsRes, salesRes, plansRes, subsRes] = await Promise.all([
           storeId ? supabase.from('products').select('*').eq('store_id', storeId) : supabase.from('products').select('*').is('store_id', null),
-          storeId ? supabase.from('brands').select('*, products(name)').eq('store_id', storeId) : supabase.from('brands').select('*, products(name)').is('store_id', null),
+          storeId ? supabase.from('brands').select('*, products(id, name, icon)').eq('store_id', storeId) : supabase.from('brands').select('*, products(id, name, icon)').is('store_id', null),
           storeId ? supabase.from('sales').select('*').eq('store_id', storeId).order('created_at', { ascending: false }) : supabase.from('sales').select('*').is('store_id', null).order('created_at', { ascending: false }),
           supabase.from('subscription_plans').select('*').order('price', { ascending: true }),
           storeId ? supabase.from('subscriptions').select('*, subscription_plans(*)').eq('store_id', storeId).limit(1) : supabase.from('subscriptions').select('*, subscription_plans(*)').is('store_id', null).limit(1)
