@@ -229,7 +229,8 @@ export default function POS() {
         brand_id: item.brandId,
         quantity: item.quantity,
         price_at_time: item.price,
-        subtotal: item.quantity * item.price
+        subtotal: item.quantity * item.price,
+        store_id: storeId
       }));
 
       const { error: itemsError } = await supabase
