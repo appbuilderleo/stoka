@@ -65,7 +65,8 @@ export default function Dashboard() {
 
   // Advanced Reports State
   const [reportFilterDate, setReportFilterDate] = useState('30days'); // 'today', '7days', '30days', 'all'
-  const [reportFilterPayment, setReportFilterPayment] = useState('all'); // 'all', 'mpesa', 'dinheiro'
+  const [reportFilterPayment, setReportFilterPayment] = useState('all'); // 'all', 'Dinheiro', 'M-Pesa', etc.
+  const [reportFilterProduct, setReportFilterProduct] = useState('all'); // 'all' or product id
 
   // Edit States
   const [editingBrand, setEditingBrand] = useState(null); // The brand object being edited
@@ -565,7 +566,14 @@ export default function Dashboard() {
       'ID Venda': `#${String(sale.id).padStart(5, '0')}`,
       'Data e Hora': new Date(sale.created_at).toLocaleString('pt-MZ'),
       'Método de Pagamento': sale.payment_method,
-      'Valor Total (MZN)': Number(sale.total)
+      'Valor Faturado (MZN)': (() => {
+        const targetProductId = reportFilterProduct !== 'all' ? Number(reportFilterProduct) : null;
+        if (targetProductId) {
+          const brandsOfProduct = brands.filter(b => b.product_id === targetProductId).map(b => b.id);
+          return sale.sale_items?.filter(item => brandsOfProduct.includes(item.brand_id)).reduce((acc, item) => acc + Number(item.subtotal), 0);
+        }
+        return Number(sale.total);
+      })()
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);
@@ -603,7 +611,15 @@ export default function Dashboard() {
         `#${String(sale.id).padStart(5, '0')}`,
         new Date(sale.created_at).toLocaleString('pt-MZ'),
         sale.payment_method,
-        Number(sale.total).toFixed(2)
+        (() => {
+          const targetProductId = reportFilterProduct !== 'all' ? Number(reportFilterProduct) : null;
+          if (targetProductId) {
+            const brandsOfProduct = brands.filter(b => b.product_id === targetProductId).map(b => b.id);
+            const sub = sale.sale_items?.filter(item => brandsOfProduct.includes(item.brand_id)).reduce((acc, item) => acc + Number(item.subtotal), 0);
+            return sub.toFixed(2);
+          }
+          return Number(sale.total).toFixed(2);
+        })()
       ];
       tableRows.push(saleData);
       totalRevenue += Number(sale.total);
@@ -663,7 +679,7 @@ export default function Dashboard() {
         const [productsRes, brandsRes, salesRes, plansRes, subsRes] = await Promise.all([
           storeId ? supabase.from('products').select('*').eq('store_id', storeId) : supabase.from('products').select('*').is('store_id', null),
           storeId ? supabase.from('brands').select('*, products(id, name, icon)').eq('store_id', storeId) : supabase.from('brands').select('*, products(id, name, icon)').is('store_id', null),
-          storeId ? supabase.from('sales').select('*').eq('store_id', storeId).order('created_at', { ascending: false }) : supabase.from('sales').select('*').is('store_id', null).order('created_at', { ascending: false }),
+          storeId ? supabase.from('sales').select('*, sale_items(brand_id, subtotal)').eq('store_id', storeId).order('created_at', { ascending: false }) : supabase.from('sales').select('*, sale_items(brand_id, subtotal)').is('store_id', null).order('created_at', { ascending: false }),
           supabase.from('subscription_plans').select('*').order('price', { ascending: true }),
           storeId ? supabase.from('subscriptions').select('*, subscription_plans(*)').eq('store_id', storeId).limit(1) : supabase.from('subscriptions').select('*, subscription_plans(*)').is('store_id', null).limit(1)
         ]);
@@ -1269,6 +1285,20 @@ export default function Dashboard() {
                             <option value="E-Mola">E-Mola</option>
                             <option value="M-Kesh">M-Kesh</option>
                           </select>
+
+                          {currentSubscription?.subscription_plans?.name === 'Empresarial' && (
+                            <select 
+                              value={reportFilterProduct}
+                              onChange={(e) => setReportFilterProduct(e.target.value)}
+                              style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none', backgroundColor: 'var(--bg-surface)' }}
+                            >
+                              <option value="all">Todas Categorias</option>
+                              {products.map(p => (
+                                <option key={p.id} value={p.id}>{p.name}</option>
+                              ))}
+                            </select>
+                          )}
+
                           <select 
                             value={reportFilterDate}
                             onChange={(e) => setReportFilterDate(e.target.value)}
@@ -1308,15 +1338,54 @@ export default function Dashboard() {
                           filteredSales = filteredSales.filter(s => s.payment_method?.toLowerCase() === reportFilterPayment.toLowerCase());
                         }
 
-                        const totalRev = filteredSales.reduce((acc, s) => acc + Number(s.total), 0);
+                        // Product Filter (Enterprise only)
+                        let productRevenue = 0;
+                        if (currentSubscription?.subscription_plans?.name === 'Empresarial' && reportFilterProduct !== 'all') {
+                          const targetProductId = Number(reportFilterProduct);
+                          
+                          // Mapear marcas para o produto alvo
+                          const brandsOfProduct = brands.filter(b => b.product_id === targetProductId).map(b => b.id);
+                          
+                          // Filtrar vendas que contêm pelo menos um item deste produto
+                          filteredSales = filteredSales.filter(sale => 
+                            sale.sale_items?.some(item => brandsOfProduct.includes(item.brand_id))
+                          );
+
+                          // Calcular receita APENAS deste produto dentro dessas vendas
+                          filteredSales.forEach(sale => {
+                            sale.sale_items?.forEach(item => {
+                              if (brandsOfProduct.includes(item.brand_id)) {
+                                productRevenue += Number(item.subtotal);
+                              }
+                            });
+                          });
+                        } else {
+                          // Receita total normal
+                          productRevenue = filteredSales.reduce((acc, s) => acc + Number(s.total), 0);
+                        }
+
+                        const totalRev = productRevenue;
                         const ticketMedio = filteredSales.length > 0 ? (totalRev / filteredSales.length).toFixed(2) : '0.00';
                         
                         // Prepare chart data (Group by Date)
                         const chartDataMap = {};
-                        filteredSales.forEach(s => {
-                            const d = new Date(s.created_at).toLocaleDateString('pt-MZ', { day: '2-digit', month: 'short' });
+                        const targetProductId = reportFilterProduct !== 'all' ? Number(reportFilterProduct) : null;
+                        const brandsOfProduct = targetProductId ? brands.filter(b => b.product_id === targetProductId).map(b => b.id) : null;
+
+                        filteredSales.forEach(sale => {
+                            const d = new Date(sale.created_at).toLocaleDateString('pt-MZ', { day: '2-digit', month: 'short' });
                             if (!chartDataMap[d]) chartDataMap[d] = { date: d, total: 0 };
-                            chartDataMap[d].total += Number(s.total);
+                            
+                            if (brandsOfProduct) {
+                              // Soma apenas o subtotal do produto filtrado nesta venda
+                              sale.sale_items?.forEach(item => {
+                                if (brandsOfProduct.includes(item.brand_id)) {
+                                  chartDataMap[d].total += Number(item.subtotal);
+                                }
+                              });
+                            } else {
+                              chartDataMap[d].total += Number(sale.total);
+                            }
                          });
                         const chartData = Object.values(chartDataMap).reverse();
 
@@ -1405,7 +1474,17 @@ export default function Dashboard() {
                                             }
                                           })()}
                                         </td>
-                                        <td style={{ fontWeight: '700' }}>{Number(sale.total).toFixed(2)} MZN</td>
+                                        <td style={{ fontWeight: '700' }}>
+                                          {(() => {
+                                            const targetProductId = reportFilterProduct !== 'all' ? Number(reportFilterProduct) : null;
+                                            if (targetProductId) {
+                                              const brandsOfProduct = brands.filter(b => b.product_id === targetProductId).map(b => b.id);
+                                              const sub = sale.sale_items?.filter(item => brandsOfProduct.includes(item.brand_id)).reduce((acc, item) => acc + Number(item.subtotal), 0);
+                                              return `${sub.toFixed(2)} MZN`;
+                                            }
+                                            return `${Number(sale.total).toFixed(2)} MZN`;
+                                          })()}
+                                        </td>
                                       </tr>
                                     ))}
                                   </tbody>
