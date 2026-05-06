@@ -1,14 +1,49 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, ShoppingCart, Plus, Minus, X, CreditCard, Banknote, Box, Package, Coffee, Droplet, ShoppingBag, Wine, Milk, LayoutDashboard, CheckCircle, XCircle, Info } from 'lucide-react';
+import { Search, ShoppingCart, Plus, Minus, X, CreditCard, Banknote, Box, Package, Coffee, Droplet, ShoppingBag, Wine, Milk, LayoutDashboard, CheckCircle, XCircle, Info, Beef, Drumstick, Fish, Bean, Wheat, CupSoda, GlassWater, Wallet, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 
 // Helper for dynamic icons
-const getIcon = (name) => {
-  const iconMap = { Box, Package, Coffee, Droplet, ShoppingBag, Wine, Milk };
-  const Icon = iconMap[name] || Box;
-  return <Icon size={32} />;
+const getIconProps = (name) => {
+  const map = {
+    Box: { icon: Box, color: '#8b5cf6', fill: '#ede9fe', bg: '#f5f3ff' }, // Purple
+    Package: { icon: Package, color: '#f59e0b', fill: '#fef3c7', bg: '#fffbeb' }, // Amber
+    Coffee: { icon: Coffee, color: '#84cc16', fill: '#ecfccb', bg: '#f7fee7' }, // Lime (Cafe/Açúcar)
+    Droplet: { icon: Droplet, color: '#0ea5e9', fill: '#e0f2fe', bg: '#f0f9ff' }, // Light Blue (Water/Oil)
+    ShoppingBag: { icon: ShoppingBag, color: '#10b981', fill: '#d1fae5', bg: '#ecfdf5' }, // Green (Groceries)
+    Wine: { icon: Wine, color: '#e11d48', fill: '#ffe4e6', bg: '#fff1f2' }, // Rose (Drinks/Wine)
+    Milk: { icon: Milk, color: '#6366f1', fill: '#e0e7ff', bg: '#eef2ff' }, // Indigo (Dairy)
+    Beef: { icon: Beef, color: '#b91c1c', fill: '#fef2f2', bg: '#fff1f1' }, // Red (Meat)
+    Drumstick: { icon: Drumstick, color: '#d97706', fill: '#fffbeb', bg: '#fff8e1' }, // Orange (Chicken)
+    Fish: { icon: Fish, color: '#0891b2', fill: '#ecfeff', bg: '#f0fdff' }, // Cyan (Fish)
+    Bean: { icon: Bean, color: '#78350f', fill: '#fef3c7', bg: '#fffaf0' }, // Brown (Grains/Beans)
+    Wheat: { icon: Wheat, color: '#ca8a04', fill: '#fefce8', bg: '#fffdf0' }, // Gold (Wheat/Flour)
+    CupSoda: { icon: CupSoda, color: '#db2777', fill: '#fdf2f8', bg: '#fff0f6' }, // Pink (Soda)
+    GlassWater: { icon: GlassWater, color: '#2563eb', fill: '#eff6ff', bg: '#f0f7ff' }, // Blue (Oil/Water)
+    Pocket: { icon: Wallet, color: '#4b5563', fill: '#f3f4f6', bg: '#f9fafb' }, // Gray (Sachet)
+    Sparkles: { icon: Sparkles, color: '#fbbf24', fill: '#fffbeb', bg: '#fffdf0' }, // Yellow (Powder)
+  };
+  return map[name] || { icon: Box, color: '#64748b', fill: '#f1f5f9', bg: '#f8fafc' };
+};
+
+const renderIcon = (name) => {
+  const { icon: Icon, color, fill, bg } = getIconProps(name);
+  return (
+    <div style={{
+      width: '52px',
+      height: '52px',
+      borderRadius: '14px',
+      backgroundColor: bg,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: '8px',
+      border: `2px solid ${fill}`
+    }}>
+      <Icon size={26} color={color} fill={fill} strokeWidth={2} />
+    </div>
+  );
 };
 
 export default function POS() {
@@ -264,8 +299,8 @@ export default function POS() {
                 className="product-btn"
                 onClick={() => openSelection(product)}
               >
-                <div className="product-icon" style={{ color: 'var(--primary)' }}>
-                  {getIcon(product.icon)}
+                <div className="product-icon-container" style={{ display: 'flex', justifyContent: 'center' }}>
+                  {renderIcon(product.icon)}
                 </div>
                 <span>{product.name}</span>
               </button>

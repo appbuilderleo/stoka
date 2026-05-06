@@ -122,7 +122,8 @@ button:active {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  height: 140px;
+  min-height: 150px;
+  height: auto;
   color: var(--text-dark);
   overflow: hidden;
 }
@@ -469,7 +470,8 @@ button:active {
     padding: 16px;
   }
   .product-btn {
-    height: 110px;
+    min-height: 130px;
+    height: auto;
     padding: 14px 8px;
     gap: 8px;
   }
@@ -537,7 +539,8 @@ button:active {
     overflow-y: auto;
   }
   .product-btn {
-    height: 100px;
+    min-height: 120px;
+    height: auto;
     padding: 12px 6px;
     gap: 6px;
   }

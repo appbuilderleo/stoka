@@ -32,12 +32,15 @@ import {
   X,
   CheckCircle,
   XCircle,
-  Info
+  Info,
+  Edit2,
+  Trash2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import saveAs from 'file-saver';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts';
 import './Dashboard.css';
 
 export default function Dashboard() {
@@ -59,6 +62,16 @@ export default function Dashboard() {
   const [selectedUpgradePlan, setSelectedUpgradePlan] = useState(null);
   const [isProcessingSubscription, setIsProcessingSubscription] = useState(false);
   const [billingCycle, setBillingCycle] = useState('mensal'); // 'mensal', 'trimestral', 'semestral', 'anual'
+
+  // Advanced Reports State
+  const [reportFilterDate, setReportFilterDate] = useState('30days'); // 'today', '7days', '30days', 'all'
+  const [reportFilterPayment, setReportFilterPayment] = useState('all'); // 'all', 'mpesa', 'dinheiro'
+
+  // Edit States
+  const [editingBrand, setEditingBrand] = useState(null); // The brand object being edited
+  const [editingProduct, setEditingProduct] = useState(null); // The product object being edited
+  const [showEditBrandModal, setShowEditBrandModal] = useState(false);
+  const [showEditProductModal, setShowEditProductModal] = useState(false);
 
   // Toast State
   const [toast, setToast] = useState(null); // { message, type: 'success' | 'error' | 'info', title }
@@ -88,9 +101,21 @@ export default function Dashboard() {
     nuit: '123456789',
     address: 'Av. das Indústrias, Matola',
     phone: '+258 84 123 4567',
-    email: 'contacto@lojamatola.co.mz'
+    email: 'contacto@lojamatola.co.mz',
+    stockLow: 20,
+    stockIdeal: 50
   });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+
+  const fetchBrands = async (storeId) => {
+    const { data } = await supabase.from('brands').select('*, products(id, name, icon)').eq('store_id', storeId);
+    if (data) setBrands(data);
+  };
+
+  const fetchProducts = async (storeId) => {
+    const { data } = await supabase.from('products').select('*').eq('store_id', storeId);
+    if (data) setProducts(data);
+  };
 
   const handleSaveSettings = async (e) => {
     e.preventDefault();
@@ -112,7 +137,9 @@ export default function Dashboard() {
           nuit: storeSettings.nuit,
           address: storeSettings.address,
           phone: storeSettings.phone,
-          email: storeSettings.email
+          email: storeSettings.email,
+          stock_low_threshold: Number(storeSettings.stockLow),
+          stock_stable_threshold: Number(storeSettings.stockIdeal)
         }).select().single();
         
         if (storeError) throw storeError;
@@ -129,7 +156,9 @@ export default function Dashboard() {
           nuit: storeSettings.nuit,
           address: storeSettings.address,
           phone: storeSettings.phone,
-          email: storeSettings.email
+          email: storeSettings.email,
+          stock_low_threshold: Number(storeSettings.stockLow),
+          stock_stable_threshold: Number(storeSettings.stockIdeal)
         }).eq('id', currentStoreId);
         
         if (storeError) throw storeError;
@@ -621,7 +650,9 @@ export default function Dashboard() {
                   nuit: store.nuit || '',
                   address: store.address || '',
                   phone: store.phone || '',
-                  email: store.email || ''
+                  email: store.email || '',
+                  stockLow: store.stock_low_threshold || 20,
+                  stockIdeal: store.stock_stable_threshold || 50
                });
              }
           }
@@ -656,6 +687,83 @@ export default function Dashboard() {
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
   }, []);
+
+  const handleDeleteBrand = async (brandId) => {
+    if (!window.confirm('Tem a certeza que deseja eliminar este item?')) return;
+    try {
+      const { error } = await supabase.from('brands').delete().eq('id', brandId);
+      if (error) throw error;
+      showToast('Item eliminado com sucesso!', 'success');
+      fetchBrands(currentStoreId);
+    } catch (err) {
+      console.error(err);
+      showToast('Erro ao eliminar item.', 'error');
+    }
+  };
+
+  const handleUpdateBrand = async () => {
+    if (!editingBrand.name || !editingBrand.price) return;
+    setIsSaving(true);
+    try {
+      const { error } = await supabase
+        .from('brands')
+        .update({
+          name: editingBrand.name,
+          price: Number(editingBrand.price),
+          stock: Number(editingBrand.stock)
+        })
+        .eq('id', editingBrand.id);
+
+      if (error) throw error;
+      showToast('Item atualizado com sucesso!', 'success');
+      setShowEditBrandModal(false);
+      fetchBrands(currentStoreId);
+    } catch (err) {
+      console.error(err);
+      showToast('Erro ao atualizar item.', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleUpdateProduct = async () => {
+    if (!editingProduct.name) return;
+    setIsSaving(true);
+    try {
+      const { error } = await supabase
+        .from('products')
+        .update({
+          name: editingProduct.name,
+          icon: editingProduct.icon
+        })
+        .eq('id', editingProduct.id);
+
+      if (error) throw error;
+      showToast('Categoria atualizada com sucesso!', 'success');
+      setShowEditProductModal(false);
+      fetchProducts(currentStoreId);
+      fetchBrands(currentStoreId);
+    } catch (err) {
+      console.error(err);
+      showToast('Erro ao atualizar categoria.', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteProduct = async (productId) => {
+    if (!window.confirm('Ao eliminar esta categoria, todos os itens (marcas) associados também serão eliminados. Continuar?')) return;
+    try {
+      const { error } = await supabase.from('products').delete().eq('id', productId);
+      if (error) throw error;
+      showToast('Categoria eliminada!', 'success');
+      fetchProducts(currentStoreId);
+      fetchBrands(currentStoreId);
+    } catch (err) {
+      console.error(err);
+      showToast('Erro ao eliminar categoria.', 'error');
+    }
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -708,6 +816,12 @@ export default function Dashboard() {
         </nav>
 
         <div className="sidebar-footer">
+          {userProfile?.role === 'superadmin' && (
+            <button className="btn-primary" style={{ width: '100%', marginBottom: '16px', justifyContent: 'center', backgroundColor: '#f59e0b', color: 'white' }} onClick={() => navigate('/superadmin')}>
+              <Shield size={18} />
+              Admin Global
+            </button>
+          )}
           <button className="btn-primary" style={{ width: '100%', marginBottom: '16px', justifyContent: 'center' }} onClick={() => navigate('/pos')}>
             <MonitorPlay size={18} />
             Abrir POS
@@ -778,8 +892,6 @@ export default function Dashboard() {
                         <h3>Gestão de Marcas e Produtos</h3>
                         <button 
                           onClick={() => {
-                            // Using the fetchData defined in useEffect is tricky, 
-                            // so I'll create a reload helper or just trigger a re-mount.
                             window.location.reload(); 
                           }}
                           style={{ background: 'none', border: 'none', color: 'var(--secondary)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
@@ -814,19 +926,59 @@ export default function Dashboard() {
                            <th>PREÇO DE VENDA</th>
                            <th>STOCK</th>
                            <th>STATUS</th>
+                           <th style={{ textAlign: 'right' }}>AÇÕES</th>
                          </tr>
                        </thead>
                        <tbody>
                          {brands.map(brand => (
                            <tr key={brand.id}>
-                             <td><strong>{brand.name}</strong></td>
-                             <td>{brand.products?.name || 'Desconhecido'}</td>
+                             <td>
+                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                 <strong>{brand.name}</strong>
+                                 <button 
+                                   onClick={() => { setEditingBrand(brand); setShowEditBrandModal(true); }}
+                                   style={{ background: 'none', border: 'none', color: 'var(--secondary)', cursor: 'pointer', opacity: 0.5 }}
+                                   title="Editar Marca/Item"
+                                 >
+                                   <Edit2 size={14} />
+                                 </button>
+                               </div>
+                             </td>
+                             <td>
+                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                 {brand.products?.name || 'Desconhecido'}
+                                 <button 
+                                   onClick={() => { setEditingProduct(brand.products); setShowEditProductModal(true); }}
+                                   style={{ background: 'none', border: 'none', color: 'var(--secondary)', cursor: 'pointer', opacity: 0.5 }}
+                                   title="Editar Categoria"
+                                 >
+                                   <Edit2 size={14} />
+                                 </button>
+                               </div>
+                             </td>
                              <td>{Number(brand.price).toFixed(2)} MZN</td>
                              <td>{brand.stock} un</td>
                              <td>
-                               <span style={{ color: brand.stock > 50 ? 'var(--success)' : '#eab308' }}>
-                                 {brand.stock > 50 ? 'Estável' : 'Abaixo do ideal'}
-                               </span>
+                                <span style={{ 
+                                  color: Number(brand.stock) <= Number(storeSettings.stockLow) ? 'var(--danger)' : 
+                                         Number(brand.stock) <= Number(storeSettings.stockIdeal) ? '#eab308' : 
+                                         'var(--success)' 
+                                }}>
+                                  {Number(brand.stock) <= Number(storeSettings.stockLow) ? 'Crítico' : 
+                                   Number(brand.stock) <= Number(storeSettings.stockIdeal) ? 'Abaixo do ideal' : 
+                                   'Estável'}
+                                </span>
+                             </td>
+                             <td>
+                               <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                 <button 
+                                   className="btn-icon" 
+                                   style={{ color: 'var(--danger)', backgroundColor: 'transparent', border: 'none', cursor: 'pointer' }}
+                                   onClick={() => handleDeleteBrand(brand.id)}
+                                 >
+                                   <Trash2 size={18} />
+                                 </button>
+                               </div>
                              </td>
                            </tr>
                          ))}
@@ -1098,81 +1250,216 @@ export default function Dashboard() {
 
               {activeTab === 'relatorios' && (
                 <div className="reports-container">
-                  <div className="card-header" style={{ marginBottom: '20px' }}>
-                    <h3>Relatório de Vendas</h3>
-                    <div style={{ display: 'flex', gap: '12px' }}>
-                      <button style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--bg-surface)', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600', color: 'var(--text-dark)' }}>
-                        <Filter size={16} />
-                        Todos os Tempos
-                      </button>
-                      <button onClick={handleExportExcel} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--success)', backgroundColor: '#eefdf4', color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600' }}>
-                        <FileSpreadsheet size={16} />
-                        Exportar Excel
-                      </button>
-                      <button onClick={handleExportPDF} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--primary)', backgroundColor: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600' }}>
-                        <FileText size={16} />
-                        Exportar PDF
-                      </button>
-                    </div>
-                  </div>
+                  {currentSubscription?.subscription_plans?.has_reports ? (
+                    <>
+                      <div className="card-header" style={{ marginBottom: '20px' }}>
+                        <div>
+                          <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Crown size={20} color="#f59e0b" /> Relatórios Avançados</h3>
+                          <p style={{ color: 'var(--secondary)', fontSize: '14px', marginTop: '4px' }}>Analise o seu desempenho com gráficos e filtros detalhados.</p>
+                        </div>
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                          <select 
+                            value={reportFilterPayment}
+                            onChange={(e) => setReportFilterPayment(e.target.value)}
+                            style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none', backgroundColor: 'var(--bg-surface)' }}
+                          >
+                            <option value="all">Todos Pagamentos</option>
+                            <option value="mpesa">M-Pesa</option>
+                            <option value="dinheiro">Dinheiro</option>
+                          </select>
+                          <select 
+                            value={reportFilterDate}
+                            onChange={(e) => setReportFilterDate(e.target.value)}
+                            style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none', backgroundColor: 'var(--bg-surface)' }}
+                          >
+                            <option value="today">Hoje</option>
+                            <option value="7days">Últimos 7 Dias</option>
+                            <option value="30days">Últimos 30 Dias</option>
+                            <option value="all">Todos os Tempos</option>
+                          </select>
+                          <button onClick={handleExportExcel} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--success)', backgroundColor: '#eefdf4', color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600' }}>
+                            <FileSpreadsheet size={16} />
+                            Excel
+                          </button>
+                          <button onClick={handleExportPDF} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--primary)', backgroundColor: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600' }}>
+                            <FileText size={16} />
+                            PDF
+                          </button>
+                        </div>
+                      </div>
 
-                  <div className="stats-grid" style={{ marginBottom: '24px' }}>
-                    <div className="stat-card">
-                      <div className="stat-info">
-                        <span className="stat-label">Receita Acumulada</span>
-                        <span className="stat-value">
-                          {sales.reduce((acc, sale) => acc + Number(sale.total), 0).toFixed(2)} MZN
-                        </span>
-                      </div>
-                      <div className="stat-icon" style={{ backgroundColor: '#eff6ff', color: '#3b82f6' }}><BarChart3 size={24} /></div>
-                    </div>
-                    <div className="stat-card">
-                      <div className="stat-info">
-                        <span className="stat-label">Total de Vendas Registradas</span>
-                        <span className="stat-value">{sales.length}</span>
-                      </div>
-                      <div className="stat-icon" style={{ backgroundColor: '#f1f5f9', color: '#6c757d' }}><Package size={24} /></div>
-                    </div>
-                    <div className="stat-card">
-                      <div className="stat-info">
-                        <span className="stat-label">Ticket Médio (Valor/Venda)</span>
-                        <span className="stat-value">
-                          {sales.length > 0 ? (sales.reduce((acc, sale) => acc + Number(sale.total), 0) / sales.length).toFixed(2) : '0.00'} MZN
-                        </span>
-                      </div>
-                      <div className="stat-icon" style={{ backgroundColor: '#fffbeb', color: '#f59e0b' }}><CreditCard size={24} /></div>
-                    </div>
-                  </div>
+                      {(() => {
+                        const now = new Date();
+                        let filteredSales = sales;
+                        
+                        if (reportFilterDate === 'today') {
+                          filteredSales = filteredSales.filter(s => new Date(s.created_at).toDateString() === now.toDateString());
+                        } else if (reportFilterDate === '7days') {
+                          const past7 = new Date(); past7.setDate(now.getDate() - 7);
+                          filteredSales = filteredSales.filter(s => new Date(s.created_at) >= past7);
+                        } else if (reportFilterDate === '30days') {
+                          const past30 = new Date(); past30.setDate(now.getDate() - 30);
+                          filteredSales = filteredSales.filter(s => new Date(s.created_at) >= past30);
+                        }
 
-                  <div className="content-card">
-                    <h3 style={{ marginBottom: '16px', fontSize: '18px', color: 'var(--text-dark)' }}>Histórico Detalhado em Tempo Real</h3>
-                    {sales.length === 0 ? (
-                      <p style={{ color: 'var(--secondary)' }}>Nenhuma venda registrada até ao momento no sistema.</p>
-                    ) : (
-                      <table className="products-table">
-                        <thead>
-                          <tr>
-                            <th>Nº RECIBO (ID)</th>
-                            <th>DATA E HORA</th>
-                            <th>MÉTODO DE PAGAMENTO</th>
-                            <th>VALOR FATURADO</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {sales.map(sale => (
-                            <tr key={sale.id}>
-                              <td style={{ color: 'var(--secondary)' }}>#{String(sale.id).padStart(5, '0')}</td>
-                              <td>{new Date(sale.created_at).toLocaleString('pt-MZ')}</td>
-                              <td style={{ textTransform: 'capitalize' }}>
-                                {sale.payment_method === 'mpesa' ? <span style={{ color: '#ef4444', fontWeight: 'bold' }}>M-Pesa</span> : <span style={{ color: 'var(--success)', fontWeight: 'bold' }}>Dinheiro</span>}
-                              </td>
-                              <td style={{ fontWeight: '700' }}>{Number(sale.total).toFixed(2)} MZN</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
+                        if (reportFilterPayment !== 'all') {
+                          filteredSales = filteredSales.filter(s => s.payment_method === reportFilterPayment);
+                        }
+
+                        const totalRev = filteredSales.reduce((acc, s) => acc + Number(s.total), 0);
+                        const ticketMedio = filteredSales.length > 0 ? (totalRev / filteredSales.length).toFixed(2) : '0.00';
+                        
+                        // Prepare chart data (Group by Date)
+                        const chartDataMap = {};
+                        filteredSales.forEach(s => {
+                           const d = new Date(s.created_at).toLocaleDateString('pt-MZ', { day: '2-digit', month: 'short' });
+                           if (!chartDataMap[d]) chartDataMap[d] = { date: d, total: 0, mpesa: 0, dinheiro: 0 };
+                           chartDataMap[d].total += Number(s.total);
+                           if (s.payment_method === 'mpesa') chartDataMap[d].mpesa += Number(s.total);
+                           else chartDataMap[d].dinheiro += Number(s.total);
+                        });
+                        const chartData = Object.values(chartDataMap).reverse();
+
+                        return (
+                          <>
+                            <div className="stats-grid" style={{ marginBottom: '24px' }}>
+                              <div className="stat-card">
+                                <div className="stat-info">
+                                  <span className="stat-label">Receita no Período</span>
+                                  <span className="stat-value">{totalRev.toFixed(2)} MZN</span>
+                                </div>
+                                <div className="stat-icon" style={{ backgroundColor: '#eff6ff', color: '#3b82f6' }}><BarChart3 size={24} /></div>
+                              </div>
+                              <div className="stat-card">
+                                <div className="stat-info">
+                                  <span className="stat-label">Vendas Realizadas</span>
+                                  <span className="stat-value">{filteredSales.length}</span>
+                                </div>
+                                <div className="stat-icon" style={{ backgroundColor: '#f1f5f9', color: '#6c757d' }}><Package size={24} /></div>
+                              </div>
+                              <div className="stat-card">
+                                <div className="stat-info">
+                                  <span className="stat-label">Ticket Médio</span>
+                                  <span className="stat-value">{ticketMedio} MZN</span>
+                                </div>
+                                <div className="stat-icon" style={{ backgroundColor: '#fffbeb', color: '#f59e0b' }}><CreditCard size={24} /></div>
+                              </div>
+                            </div>
+
+                            {chartData.length > 0 ? (
+                              <div className="content-card" style={{ marginBottom: '24px', padding: '24px' }}>
+                                <h3 style={{ marginBottom: '20px', color: 'var(--text-dark)' }}>Evolução de Faturação</h3>
+                                <div style={{ height: '300px', width: '100%' }}>
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                                      <defs>
+                                        <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                                          <stop offset="5%" stopColor="#178236" stopOpacity={0.3}/>
+                                          <stop offset="95%" stopColor="#178236" stopOpacity={0}/>
+                                        </linearGradient>
+                                      </defs>
+                                      <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} />
+                                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dx={-10} tickFormatter={(val) => `${val}`} />
+                                      <CartesianGrid vertical={false} stroke="#e2e8f0" />
+                                      <RechartsTooltip 
+                                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
+                                        formatter={(value) => [`${value.toFixed(2)} MZN`, 'Faturado']}
+                                      />
+                                      <Area type="monotone" dataKey="total" stroke="#178236" strokeWidth={3} fillOpacity={1} fill="url(#colorTotal)" />
+                                    </AreaChart>
+                                  </ResponsiveContainer>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="content-card" style={{ marginBottom: '24px', padding: '40px', textAlign: 'center', color: 'var(--secondary)' }}>
+                                Não há dados para exibir no gráfico neste período.
+                              </div>
+                            )}
+
+                            <div className="content-card">
+                              <h3 style={{ marginBottom: '16px', fontSize: '18px', color: 'var(--text-dark)' }}>Histórico Detalhado em Tempo Real</h3>
+                              {filteredSales.length === 0 ? (
+                                <p style={{ color: 'var(--secondary)' }}>Nenhuma venda registrada no período selecionado.</p>
+                              ) : (
+                                <table className="products-table">
+                                  <thead>
+                                    <tr>
+                                      <th>Nº RECIBO (ID)</th>
+                                      <th>DATA E HORA</th>
+                                      <th>MÉTODO DE PAGAMENTO</th>
+                                      <th>VALOR FATURADO</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {filteredSales.map(sale => (
+                                      <tr key={sale.id}>
+                                        <td style={{ color: 'var(--secondary)' }}>#{String(sale.id).padStart(5, '0')}</td>
+                                        <td>{new Date(sale.created_at).toLocaleString('pt-MZ')}</td>
+                                        <td style={{ textTransform: 'capitalize' }}>
+                                          {sale.payment_method === 'mpesa' ? <span style={{ color: '#ef4444', fontWeight: 'bold' }}>M-Pesa</span> : <span style={{ color: 'var(--success)', fontWeight: 'bold' }}>Dinheiro</span>}
+                                        </td>
+                                        <td style={{ fontWeight: '700' }}>{Number(sale.total).toFixed(2)} MZN</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </>
+                  ) : (
+                    <>
+                      <div className="card-header" style={{ marginBottom: '20px' }}>
+                        <h3>Relatório de Vendas (Básico)</h3>
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                          <button onClick={handleExportExcel} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--success)', backgroundColor: '#eefdf4', color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600' }}>
+                            <FileSpreadsheet size={16} /> Exportar Excel
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {/* Básico UI... */}
+                      <div className="stats-grid" style={{ marginBottom: '24px' }}>
+                        <div className="stat-card">
+                          <div className="stat-info">
+                            <span className="stat-label">Receita Acumulada</span>
+                            <span className="stat-value">{sales.reduce((acc, sale) => acc + Number(sale.total), 0).toFixed(2)} MZN</span>
+                          </div>
+                          <div className="stat-icon" style={{ backgroundColor: '#eff6ff', color: '#3b82f6' }}><BarChart3 size={24} /></div>
+                        </div>
+                        <div className="stat-card">
+                          <div className="stat-info">
+                            <span className="stat-label">Vendas</span>
+                            <span className="stat-value">{sales.length}</span>
+                          </div>
+                          <div className="stat-icon" style={{ backgroundColor: '#f1f5f9', color: '#6c757d' }}><Package size={24} /></div>
+                        </div>
+                      </div>
+
+                      <div className="content-card" style={{ position: 'relative', overflow: 'hidden' }}>
+                        <div style={{ filter: 'blur(4px)', opacity: 0.6, pointerEvents: 'none' }}>
+                          <h3 style={{ marginBottom: '20px' }}>Evolução de Faturação</h3>
+                          <div style={{ height: '200px', backgroundColor: '#f1f5f9', borderRadius: '8px', marginBottom: '20px' }}></div>
+                          <table className="products-table">
+                            <thead><tr><th>ID</th><th>DATA</th><th>MÉTODO</th><th>VALOR</th></tr></thead>
+                            <tbody><tr><td>#0001</td><td>Hoje</td><td>M-Pesa</td><td>500 MZN</td></tr></tbody>
+                          </table>
+                        </div>
+                        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.7)', zIndex: 10 }}>
+                          <Crown size={48} color="#f59e0b" style={{ marginBottom: '16px' }} />
+                          <h3 style={{ fontSize: '20px', fontWeight: '800', marginBottom: '8px', color: 'var(--primary)' }}>Relatórios Avançados Bloqueados</h3>
+                          <p style={{ color: 'var(--secondary)', marginBottom: '24px', textAlign: 'center', maxWidth: '400px' }}>
+                            Faça upgrade para o plano Profissional ou Empresarial para ter acesso a gráficos de vendas detalhados e filtros de datas/pagamentos.
+                          </p>
+                          <button onClick={() => setActiveTab('assinaturas')} className="btn-primary" style={{ backgroundColor: '#f59e0b', padding: '12px 24px', fontSize: '15px' }}>
+                            Fazer Upgrade Agora
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -1230,32 +1517,46 @@ export default function Dashboard() {
 
                     <div className="content-card" style={{ padding: '24px' }}>
                       <h4 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)' }}>
-                        <Phone size={18} />
-                        Contacto e Comunicação
+                        <RefreshCw size={18} />
+                        Parâmetros de Stock
                       </h4>
+                      <p style={{ color: 'var(--secondary)', fontSize: '13px', marginBottom: '20px' }}>
+                        Defina os limites que determinam o estado visual do seu inventário.
+                      </p>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                         <div>
                           <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', color: 'var(--secondary)', fontWeight: '600' }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Phone size={14} /> Telefone / WhatsApp</span>
+                            Abaixo do Ideal (Crítico)
                           </label>
-                          <input 
-                            type="text" 
-                            value={storeSettings.phone}
-                            onChange={(e) => setStoreSettings({...storeSettings, phone: e.target.value})}
-                            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none' }}
-                          />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input 
+                              type="number" 
+                              value={storeSettings.stockLow}
+                              onChange={(e) => setStoreSettings({...storeSettings, stockLow: e.target.value})}
+                              style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none' }}
+                            />
+                            <span style={{ fontSize: '13px', color: 'var(--secondary)' }}>un</span>
+                          </div>
+                          <span style={{ fontSize: '11px', color: 'var(--danger)', marginTop: '4px', display: 'block' }}>Aparecerá a Vermelho</span>
                         </div>
                         <div>
                           <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', color: 'var(--secondary)', fontWeight: '600' }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Mail size={14} /> Email da Loja</span>
+                            Ideal (Atenção)
                           </label>
-                          <input 
-                            type="email" 
-                            value={storeSettings.email}
-                            onChange={(e) => setStoreSettings({...storeSettings, email: e.target.value})}
-                            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none' }}
-                          />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input 
+                              type="number" 
+                              value={storeSettings.stockIdeal}
+                              onChange={(e) => setStoreSettings({...storeSettings, stockIdeal: e.target.value})}
+                              style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none' }}
+                            />
+                            <span style={{ fontSize: '13px', color: 'var(--secondary)' }}>un</span>
+                          </div>
+                          <span style={{ fontSize: '11px', color: '#ca8a04', marginTop: '4px', display: 'block' }}>Aparecerá a Amarelo</span>
                         </div>
+                      </div>
+                      <div style={{ marginTop: '16px', fontSize: '12px', color: 'var(--success)', fontWeight: '500' }}>
+                        Acima de {storeSettings.stockIdeal} un: <span style={{ fontWeight: 'bold' }}>Estável (Verde)</span>
                       </div>
                     </div>
 
@@ -1453,10 +1754,18 @@ export default function Dashboard() {
                     <option value="Box">Caixa (Box)</option>
                     <option value="Package">Pacote (Package)</option>
                     <option value="ShoppingBag">Saco (ShoppingBag)</option>
+                    <option value="Pocket">Saqueta (Pocket)</option>
+                    <option value="GlassWater">Óleo/Água (GlassWater)</option>
+                    <option value="CupSoda">Refrigerante (CupSoda)</option>
                     <option value="Wine">Garrafa de Vidro (Wine)</option>
                     <option value="Milk">Garrafa/Pacote Leite (Milk)</option>
-                    <option value="Coffee">Copo/Chávena (Coffee)</option>
-                    <option value="Droplet">Líquidos (Droplet)</option>
+                    <option value="Coffee">Caneca/Café (Coffee)</option>
+                    <option value="Bean">Grãos (Bean)</option>
+                    <option value="Wheat">Pó/Farinha (Wheat)</option>
+                    <option value="Beef">Carne (Beef)</option>
+                    <option value="Drumstick">Frango (Drumstick)</option>
+                    <option value="Fish">Peixe (Fish)</option>
+                    <option value="Sparkles">Pó/Diverso (Sparkles)</option>
                   </select>
                 </div>
               </div>
@@ -1606,7 +1915,116 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Global Toast Notification */}
+        {/* Edit Brand Modal */}
+      {showEditBrandModal && editingBrand && (
+        <div className="overlay">
+          <div className="modal">
+            <div className="modal-title">Editar Marca/Item</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', color: 'var(--secondary)' }}>Nome da Marca</label>
+                <input 
+                  type="text" 
+                  value={editingBrand.name} 
+                  onChange={(e) => setEditingBrand({ ...editingBrand, name: e.target.value })}
+                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)' }}
+                />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', color: 'var(--secondary)' }}>Preço (MZN)</label>
+                  <input 
+                    type="number" 
+                    value={editingBrand.price} 
+                    onChange={(e) => setEditingBrand({ ...editingBrand, price: e.target.value })}
+                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', color: 'var(--secondary)' }}>Stock Atual</label>
+                  <input 
+                    type="number" 
+                    value={editingBrand.stock} 
+                    onChange={(e) => setEditingBrand({ ...editingBrand, stock: e.target.value })}
+                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)' }}
+                  />
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowEditBrandModal(false)} style={{ padding: '8px 16px', borderRadius: '8px', backgroundColor: 'var(--bg-main)', color: 'var(--secondary)' }}>Cancelar</button>
+              <button 
+                onClick={handleUpdateBrand}
+                disabled={isSaving}
+                style={{ padding: '8px 16px', borderRadius: '8px', backgroundColor: 'var(--primary)', color: 'white' }}>
+                {isSaving ? 'Salvando...' : 'Atualizar Dados'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Product Category Modal */}
+      {showEditProductModal && editingProduct && (
+        <div className="overlay">
+          <div className="modal">
+            <div className="modal-title">Editar Categoria de Produto</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', color: 'var(--secondary)' }}>Nome da Categoria</label>
+                <input 
+                  type="text" 
+                  value={editingProduct.name} 
+                  onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })}
+                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', color: 'var(--secondary)' }}>Ícone Representativo</label>
+                <select 
+                  value={editingProduct.icon}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, icon: e.target.value })}
+                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)' }}
+                >
+                  <option value="Box">Caixa (Box)</option>
+                  <option value="Package">Pacote (Package)</option>
+                  <option value="ShoppingBag">Saco (ShoppingBag)</option>
+                  <option value="Pocket">Saqueta (Pocket)</option>
+                  <option value="GlassWater">Óleo/Água (GlassWater)</option>
+                  <option value="CupSoda">Refrigerante (CupSoda)</option>
+                  <option value="Wine">Garrafa de Vidro (Wine)</option>
+                  <option value="Milk">Garrafa/Pacote Leite (Milk)</option>
+                  <option value="Coffee">Caneca/Café (Coffee)</option>
+                  <option value="Bean">Grãos (Bean)</option>
+                  <option value="Wheat">Pó/Farinha (Wheat)</option>
+                  <option value="Beef">Carne (Beef)</option>
+                  <option value="Drumstick">Frango (Drumstick)</option>
+                  <option value="Fish">Peixe (Fish)</option>
+                  <option value="Sparkles">Pó/Diverso (Sparkles)</option>
+                </select>
+              </div>
+              
+              <button 
+                onClick={() => handleDeleteProduct(editingProduct.id)}
+                style={{ padding: '8px', border: '1px solid var(--danger)', color: 'var(--danger)', backgroundColor: 'transparent', borderRadius: '8px', marginTop: '10px', fontSize: '13px' }}
+              >
+                Eliminar Categoria Permanentemente
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowEditProductModal(false)} style={{ padding: '8px 16px', borderRadius: '8px', backgroundColor: 'var(--bg-main)', color: 'var(--secondary)' }}>Cancelar</button>
+              <button 
+                onClick={handleUpdateProduct}
+                disabled={isSaving}
+                style={{ padding: '8px 16px', borderRadius: '8px', backgroundColor: 'var(--success)', color: 'white' }}>
+                {isSaving ? 'Salvando...' : 'Guardar Alterações'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Global Toast Notification */}
         {toast && (
           <div className="toast-container">
             <div className={`toast ${toast.type}`}>

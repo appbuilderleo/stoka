@@ -80,7 +80,7 @@ export default function Login() {
             <h1 style={{ fontSize: '32px', fontWeight: '900', letterSpacing: '-1px', margin: 0 }}>KaziHub</h1>
           </div>
           <h2>
-            A Gestão do Seu Negócio,<br/>Num Piscar de Olhos.
+            Kazi· Controla o teu negócio
           </h2>
           <p>
             Transformamos qualquer loja num sistema digital poderoso: controle rápido de stock, vendas mais ágeis e lucros claros sem complicação.
