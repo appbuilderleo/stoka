@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 if (!process.env.DATABASE_URL) {
-  throw new Error('[DB] DATABASE_URL não configurada nas variáveis de ambiente! O Vercel precisa desta variável para conectar à base de dados.');
+  console.error('[DB] DATABASE_URL não configurada nas variáveis de ambiente! O Vercel precisa desta variável para conectar à base de dados.');
 }
 
 export const pool = new Pool({
