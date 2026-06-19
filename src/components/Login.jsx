@@ -46,7 +46,9 @@ export default function Login() {
         setIsLogin(true);
       }
     } catch (err) {
-      showToast(err.response?.data?.error || err.message || 'Ocorreu um erro durante a autenticação.', 'error');
+      const apiError = err.response?.data?.error;
+      const errorMsg = typeof apiError === 'object' ? apiError.message : apiError;
+      showToast(errorMsg || err.message || 'Ocorreu um erro durante a autenticação.', 'error');
     } finally {
       setIsLoading(false);
     }
