@@ -1,7 +1,7 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
-import { pool, getCachedOrFetch, cache } from '../db.js';
-import { verifyToken } from '../middleware/auth.js';
+import { pool, getCachedOrFetch, cache } from '../db.mjs';
+import { verifyToken } from '../middleware/auth.mjs';
 
 const router = express.Router();
 
@@ -12,10 +12,11 @@ const checkStoreAccess = async (req, storeId) => {
   if (!storeId || storeId === 'null') return false;
   if (req.user.role === 'superadmin') return true;
   if (req.user.store_id === storeId) return true;
-  const { pool } = require('../db.js');
   const res = await pool.query('SELECT owner_id FROM stores WHERE id = $1', [storeId]);
   if (res.rows.length > 0 && res.rows[0].owner_id === req.user.id) return true;
   return false;
+};
+
 // Security Helpers
 router.use(verifyToken);
 
@@ -478,7 +479,7 @@ router.put('/stores/:id', async (req, res) => {
     const { name, nuit, address, phone, email, stock_low_threshold, stock_stable_threshold } = req.body;
     const result = await pool.query(
       'UPDATE stores SET name=$1, nuit=$2, address=$3, phone=$4, email=$5, stock_low_threshold=$6, stock_stable_threshold=$7 WHERE id=$8 RETURNING *',
-      [name, nuit, address, phone, email, stock_low_threshold || 20, stock_stable_threshold || 50, id, req.user.id]
+      [name, nuit, address, phone, email, stock_low_threshold || 20, stock_stable_threshold || 50, id]
     );
     res.json(result.rows[0]);
   } catch (error) {

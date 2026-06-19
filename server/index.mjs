@@ -5,9 +5,9 @@ import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import axios from 'axios';
 import crypto from 'crypto';
-import { pool } from './db.js';
-import authRoutes from './routes/auth.js';
-import apiRoutes from './routes/api.js';
+import { pool } from './db.mjs';
+import authRoutes from './routes/auth.mjs';
+import apiRoutes from './routes/api.mjs';
 
 dotenv.config();
 

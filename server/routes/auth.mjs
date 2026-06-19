@@ -2,8 +2,8 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
-import { pool } from '../db.js';
-import { verifyToken } from '../middleware/auth.js';
+import { pool } from '../db.mjs';
+import { verifyToken } from '../middleware/auth.mjs';
 
 const router = express.Router();
 
