@@ -9,8 +9,7 @@ if (!process.env.DATABASE_URL) {
 }
 
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL?.replace('?sslmode=verify-full', ''),
-  ssl: true
+  connectionString: process.env.DATABASE_URL?.replace('verify-full', 'require')
 });
 
 // Create a global cache instance (default TTL: 5 minutes)
