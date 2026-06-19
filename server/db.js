@@ -4,11 +4,13 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+if (!process.env.DATABASE_URL) {
+  throw new Error('[DB] DATABASE_URL não configurada nas variáveis de ambiente! O Vercel precisa desta variável para conectar à base de dados.');
+}
+
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL?.replace('?sslmode=verify-full', ''),
-  ssl: {
-    rejectUnauthorized: false
-  }
+  ssl: true
 });
 
 // Create a global cache instance (default TTL: 5 minutes)

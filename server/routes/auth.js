@@ -47,7 +47,7 @@ router.post('/register', authLimiter, async (req, res) => {
 
   } catch (error) {
     console.error('[Auth] Register error:', error);
-    res.status(500).json({ error: 'Erro ao registar utilizador.' });
+    res.status(500).json({ error: 'Erro ao registar utilizador: ' + error.message });
   }
 });
 
@@ -80,7 +80,7 @@ router.post('/login', authLimiter, async (req, res) => {
 
   } catch (error) {
     console.error('[Auth] Login error:', error);
-    res.status(500).json({ error: 'Erro ao iniciar sessão.' });
+    res.status(500).json({ error: 'Erro ao iniciar sessão: ' + error.message });
   }
 });
 
