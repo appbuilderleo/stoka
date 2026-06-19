@@ -4,11 +4,11 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Create a connection pool to CockroachDB
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  // When using verify-full, pg tries to read the cert from ~/.postgresql/root.crt
-  // or %APPDATA%\postgresql\root.crt on Windows by default if not specified explicitly
+  connectionString: process.env.DATABASE_URL?.replace('?sslmode=verify-full', ''),
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
 // Create a global cache instance (default TTL: 5 minutes)
