@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, ShoppingCart, Plus, Minus, X, CreditCard, Banknote, Box, Package, Coffee, Droplet, ShoppingBag, Wine, Milk, LayoutDashboard, CheckCircle, XCircle, Info, Beef, Drumstick, Fish, Bean, Wheat, CupSoda, GlassWater, Wallet, Sparkles, Smartphone } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
+import api from '../lib/api';
 
 // Custom icon for Grains (pile of grains)
 const GrainsIcon = ({ size, color, fill }) => (
@@ -61,6 +62,7 @@ const renderIcon = (name) => {
 export default function POS() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const [currentStoreId, setCurrentStoreId] = useState(null);
   const [cart, setCart] = useState([]);
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
   
@@ -69,7 +71,7 @@ export default function POS() {
   const [brands, setBrands] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [storeId, setStoreId] = useState(null);
+  const { user } = useAuth();
 
   // Selection Modal State
   const [activeProduct, setActiveProduct] = useState(null);
@@ -84,52 +86,26 @@ export default function POS() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // Fetch Data from Supabase
+  // Fetch Data from API
   useEffect(() => {
     async function fetchData() {
+      if (!user) return;
       setIsLoading(true);
       try {
-        // Obter o store_id do utilizador autenticado
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          console.warn('POS: Utilizador não autenticado');
-          setIsLoading(false);
-          return;
-        }
+        const profilesRes = await api.get('/profiles');
+        const profile = profilesRes.data.find(p => p.id === user.id);
+        const storeId = profile?.store_id;
 
-        let currentStoreId = null;
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('store_id')
-          .eq('id', user.id)
-          .single();
-
-        if (profileError) {
-          console.error('POS: Erro ao buscar perfil:', profileError);
-        }
+        const [productsRes, brandsRes] = await Promise.all([
+          api.get(storeId ? `/products?store_id=${storeId}` : '/products'),
+          api.get(storeId ? `/brands?store_id=${storeId}` : '/brands')
+        ]);
         
-        if (profile?.store_id) {
-          currentStoreId = profile.store_id;
-          setStoreId(currentStoreId);
-        }
-
-        // Buscar produtos e marcas DA LOJA do utilizador
-        let productsQuery = supabase.from('products').select('*');
-        let brandsQuery = supabase.from('brands').select('*');
-
-        if (currentStoreId) {
-          productsQuery = productsQuery.eq('store_id', currentStoreId);
-          brandsQuery = brandsQuery.eq('store_id', currentStoreId);
-        }
-
-        const [productsRes, brandsRes] = await Promise.all([productsQuery, brandsQuery]);
-        
-        console.log('POS: Produtos encontrados:', productsRes.data?.length, 'Marcas:', brandsRes.data?.length);
-        if (productsRes.error) console.error('POS: Erro produtos:', productsRes.error);
-        if (brandsRes.error) console.error('POS: Erro marcas:', brandsRes.error);
-
         if (productsRes.data) setProducts(productsRes.data);
         if (brandsRes.data) setBrands(brandsRes.data);
+        
+        // Also keep storeId in local state if needed for finalizing sales
+        setCurrentStoreId(storeId);
       } catch (error) {
         console.error("POS: Error fetching data:", error);
       } finally {
@@ -137,12 +113,14 @@ export default function POS() {
       }
     }
     fetchData();
-  }, []);
+  }, [user]);
 
   // Computed
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredProducts = products.filter(p => {
+    const hasBrands = brands.some(b => String(b.product_id) === String(p.id));
+    const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase());
+    return hasBrands && matchesSearch;
+  });
   
   const total = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
   const formattedTotal = Number(total).toFixed(2);
@@ -214,55 +192,23 @@ export default function POS() {
     setIsProcessing(true);
 
     try {
-      // 1. Insert into Sales
-      const { data: saleData, error: saleError } = await supabase
-        .from('sales')
-        .insert([{ total: Number(total), payment_method: paymentMethod, store_id: storeId }])
-        .select()
-        .single();
-        
-      if (saleError) throw saleError;
+      const payload = {
+        total: Number(total),
+        payment_method: paymentMethod,
+        store_id: currentStoreId,
+        items: cart.map(item => ({
+          brand_id: item.brandId,
+          quantity: item.quantity,
+          price: item.price,
+          subtotal: item.quantity * item.price
+        }))
+      };
 
-      // 2. Insert into Sale items
-      const saleItems = cart.map(item => ({
-        sale_id: saleData.id,
-        brand_id: item.brandId,
-        quantity: item.quantity,
-        price_at_time: item.price,
-        subtotal: item.quantity * item.price,
-        store_id: storeId
-      }));
-
-      const { error: itemsError } = await supabase
-        .from('sale_items')
-        .insert(saleItems);
-
-      if (itemsError) throw itemsError;
-
-      // 3. Update Stock for each item in parallel for speed
-      await Promise.all(cart.map(async (item) => {
-          try {
-              const { data: currentItem } = await supabase
-                  .from('brands')
-                  .select('stock')
-                  .eq('id', item.brandId)
-                  .single();
-              
-              if (currentItem) {
-                  const newStock = Math.max(0, Number(currentItem.stock) - Number(item.quantity));
-                  await supabase
-                      .from('brands')
-                      .update({ stock: newStock })
-                      .eq('id', item.brandId);
-              }
-          } catch (err) {
-              console.error("Error updating item stock:", err);
-          }
-      }));
+      const res = await api.post('/sales', payload);
 
       // Reset cart on success
       setCart([]);
-      showToast(`Venda finalizada! ID: ${saleData.id}`, 'success', 'Venda Concluída');
+      showToast(`Venda finalizada! ID: ${res.data.sale_id}`, 'success', 'Venda Concluída');
     } catch (error) {
       console.error("Error saving sale:", error);
       showToast("Erro ao processar a venda.", "error");
@@ -284,8 +230,8 @@ export default function POS() {
           <button className="pos-dashboard-btn" onClick={() => navigate('/dashboard')}>
             <LayoutDashboard size={20} />
           </button>
-          <div style={{ display: 'flex', alignItems: 'center' }}>
-            <img src="/kazilogo.png" alt="KaziHub Logo" style={{ height: '24px', width: 'auto' }} />
+          <div className="pos-brand">
+            <img src="/stokaw.png" alt="Stoka Logo" style={{ height: '24px', width: 'auto' }} />
           </div>
         </div>
         <div className="search-bar">

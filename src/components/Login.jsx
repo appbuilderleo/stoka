@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Store, User, Mail, Lock, LogIn, UserPlus, X, CheckCircle, XCircle, Info } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 import './Login.css';
 
 function CheckIcon({ size, color }) {
@@ -16,6 +16,7 @@ export default function Login() {
   const [isLogin, setIsLogin] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const { login, register } = useAuth();
 
   // Toast State
   const [toast, setToast] = useState(null);
@@ -37,28 +38,15 @@ export default function Login() {
     
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: formData.email,
-          password: formData.password,
-        });
-        if (error) throw error;
+        await login(formData.email, formData.password);
         navigate('/dashboard');
       } else {
-        const { error } = await supabase.auth.signUp({
-          email: formData.email,
-          password: formData.password,
-          options: {
-            data: { name: formData.name }
-          }
-        });
-        if (error) throw error;
+        await register(formData.email, formData.password, formData.name, '');
         showToast('Conta criada com sucesso! Já pode fazer login.');
         setIsLogin(true);
       }
     } catch (err) {
-      showToast(err.message === 'Invalid login credentials' 
-            ? 'Credenciais inválidas. Verifique o seu e-mail e palavra-passe.' 
-            : err.message || 'Ocorreu um erro durante a autenticação.', 'error');
+      showToast(err.response?.data?.error || err.message || 'Ocorreu um erro durante a autenticação.', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -74,10 +62,10 @@ export default function Login() {
         
         <div className="login-branding-content">
           <div style={{ marginBottom: '32px' }}>
-            <img src="/kazilogo.png" alt="KaziHub Logo" style={{ height: '50px', width: 'auto', display: 'block' }} />
+            <img src="/stokaw.png" alt="Stoka Logo" style={{ height: '50px', width: 'auto', display: 'block' }} />
           </div>
           <h2>
-            Kazi· Controla o teu negócio
+            Stoka · Controla o teu negócio
           </h2>
           <p>
             Transformamos qualquer loja num sistema digital poderoso: controle rápido de stock, vendas mais ágeis e lucros claros sem complicação.
@@ -182,7 +170,7 @@ export default function Login() {
               {isLoading ? (
                 'Processando...'
               ) : isLogin ? (
-                <><LogIn size={20} /> Entrar no KaziHub</>
+                <><LogIn size={20} /> Entrar no Stoka</>
               ) : (
                 <><UserPlus size={20} /> Criar Conta de Gestor</>
               )}

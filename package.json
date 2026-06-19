@@ -1,5 +1,5 @@
 {
-  "name": "kazihub",
+  "name": "stoka",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -11,7 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.103.0",
+    "axios": "^1.18.0",
     "file-saver": "^2.0.5",
     "framer-motion": "^12.38.0",
     "jspdf": "^4.2.1",

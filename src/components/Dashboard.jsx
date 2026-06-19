@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import api from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { 
   LayoutDashboard, 
   Package, 
@@ -34,7 +35,12 @@ import {
   XCircle,
   Info,
   Edit2,
-  Trash2
+  Trash2,
+  Users,
+  User,
+  Eye,
+  Key,
+  Lock
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
@@ -47,11 +53,23 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   // Data states
   const [products, setProducts] = useState([]);
   const [brands, setBrands] = useState([]);
+  const [storeUsers, setStoreUsers] = useState([]);
+  
+  // Profile Settings State
+  const [profileSettings, setProfileSettings] = useState({
+    fullName: '',
+    email: '',
+    password: '',
+    avatarUrl: ''
+  });
+  const [avatarFile, setAvatarFile] = useState(null);
   const [sales, setSales] = useState([]);
+  const [myStores, setMyStores] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Subscription states
@@ -67,6 +85,9 @@ export default function Dashboard() {
   const [reportFilterDate, setReportFilterDate] = useState('30days'); // 'today', '7days', '30days', 'all'
   const [reportFilterPayment, setReportFilterPayment] = useState('all'); // 'all', 'Dinheiro', 'M-Pesa', etc.
   const [reportFilterProduct, setReportFilterProduct] = useState('all'); // 'all' or product id
+  const [productSearch, setProductSearch] = useState('');
+  const [productCategoryFilter, setProductCategoryFilter] = useState('all');
+  const [dashboardCategoryFilter, setDashboardCategoryFilter] = useState('all');
 
   // Edit States
   const [editingBrand, setEditingBrand] = useState(null); // The brand object being edited
@@ -107,15 +128,168 @@ export default function Dashboard() {
     stockIdeal: 50
   });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [isAddingUser, setIsAddingUser] = useState(false);
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserFullName, setNewUserFullName] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserRole, setNewUserRole] = useState('vendedor');
+  const [newUserStoreId, setNewUserStoreId] = useState('');
 
-  const fetchBrands = async (storeId) => {
-    const { data } = await supabase.from('brands').select('*, products(id, name, icon)').eq('store_id', storeId);
+  const isSuperAdmin = user?.role === 'superadmin' || userProfile?.role === 'superadmin';
+
+  const fetchBrands = async (sId) => {
+    const id = sId || currentStoreId;
+    if (!id) return;
+    const { data } = await api.get(`/brands?store_id=${id}`);
     if (data) setBrands(data);
   };
 
-  const fetchProducts = async (storeId) => {
-    const { data } = await supabase.from('products').select('*').eq('store_id', storeId);
+  const fetchProducts = async (sId) => {
+    const id = sId || currentStoreId;
+    if (!id) return;
+    const { data } = await api.get(`/products?store_id=${id}`);
     if (data) setProducts(data);
+  };
+
+  const handleAddUser = async () => {
+    if (!newUserEmail) return;
+    
+    // Check max users limit
+    if (!isSuperAdmin) {
+      if (currentSubscription) {
+        const maxUsers = currentSubscription.subscription_plans?.max_users;
+        if (maxUsers !== -1 && storeUsers.length >= maxUsers) {
+          showToast(`O seu plano permite no máximo ${maxUsers} utilizadores. Faça upgrade!`, 'error');
+          return;
+        }
+      }
+    }
+
+    setIsAddingUser(true);
+    try {
+      // 1. Try to find if user exists
+      const resProfiles = await api.get('/profiles');
+      const existingProfiles = resProfiles.data.filter(p => p.email.toLowerCase() === newUserEmail.trim().toLowerCase());
+
+      if (existingProfiles && existingProfiles.length > 0) {
+        // User exists, just link
+        const target = existingProfiles[0];
+        if (target.store_id) {
+          showToast("Este utilizador já pertence a uma loja.", "error");
+          return;
+        }
+
+        await api.put(`/profiles/${target.id}`, { store_id: newUserStoreId || currentStoreId, role: newUserRole });
+        const updateError = null;
+
+        if (updateError) throw updateError;
+        showToast("Membro vinculado com sucesso!");
+      } else {
+        // User doesn't exist, create via backend
+        if (!newUserPassword) {
+          showToast("Utilizador novo: é necessário definir uma senha.", "info");
+          setIsAddingUser(false);
+          return;
+        }
+
+        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/admin/create-user`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: newUserEmail.trim(),
+            password: newUserPassword,
+            fullName: newUserFullName || 'Novo Membro',
+            role: newUserRole,
+            storeId: newUserStoreId || currentStoreId
+          })
+        });
+
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Erro ao criar utilizador');
+
+        showToast("Novo utilizador criado e vinculado!");
+      }
+
+      setNewUserEmail('');
+      setNewUserPassword('');
+      setNewUserFullName('');
+      
+      const resNew = await api.get('/profiles?store_id=' + currentStoreId);
+      const newUsers = resNew.data;
+      if (newUsers) setStoreUsers(newUsers);
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || "Erro ao processar membro.", "error");
+    } finally {
+      setIsAddingUser(false);
+    }
+  };
+
+  const handleRemoveUser = async (profileId) => {
+    if (profileId === userProfile.id) {
+      showToast("Você não pode remover a si mesmo!", "info");
+      return;
+    }
+    if (!window.confirm("Remover este membro da equipa?")) return;
+
+    try {
+      await api.put(`/profiles/${profileId}`, { store_id: null, role: 'vendedor' });
+      showToast("Membro removido.");
+      setStoreUsers(storeUsers.filter(u => u.id !== profileId));
+    } catch (err) {
+      console.error(err);
+      showToast("Erro ao remover membro.", "error");
+    }
+  };
+
+  const handleSaveProfile = async (e) => {
+    e.preventDefault();
+    setIsSavingSettings(true);
+    try {
+      const formData = new FormData();
+      formData.append('full_name', profileSettings.fullName);
+      formData.append('email', profileSettings.email);
+      
+      if (avatarFile) {
+        formData.append('avatar', avatarFile);
+      } else if (profileSettings.avatarUrl) {
+        formData.append('avatar_url', profileSettings.avatarUrl);
+      }
+
+      if (profileSettings.password && profileSettings.password.trim() !== '') {
+        formData.append('password', profileSettings.password);
+      }
+      
+      const res = await api.put('/my_profile', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      setUserProfile(prev => ({...prev, ...res.data}));
+      setProfileSettings(prev => ({...prev, password: '', avatarUrl: res.data.avatar_url || prev.avatarUrl}));
+      setAvatarFile(null);
+      
+      if (currentStoreId) {
+        await api.put(`/stores/${currentStoreId}`, {
+          name: storeSettings.storeName,
+          nuit: storeSettings.nuit,
+          address: storeSettings.address,
+          phone: storeSettings.phone,
+          email: storeSettings.email,
+          stock_low_threshold: Number(storeSettings.stockLow),
+          stock_stable_threshold: Number(storeSettings.stockIdeal)
+        });
+      }
+      
+      showToast("Configurações atualizadas com sucesso!");
+    } catch (err) {
+      console.error(err);
+      if (err.response && err.response.data && err.response.data.error) {
+        showToast(err.response.data.error, "error");
+      } else {
+        showToast("Erro ao atualizar perfil.", "error");
+      }
+    } finally {
+      setIsSavingSettings(false);
+    }
   };
 
   const handleSaveSettings = async (e) => {
@@ -123,7 +297,10 @@ export default function Dashboard() {
     setIsSavingSettings(true);
     
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+          navigate('/');
+          return;
+        }
       if (!user) {
         showToast("Sessão inválida. Faça login novamente.", "error");
         return;
@@ -133,7 +310,7 @@ export default function Dashboard() {
 
       if (!currentStoreId) {
         // Criar Loja Nova
-        const { data: newStore, error: storeError } = await supabase.from('stores').insert({
+        const resStore = await api.post('/stores', {
           name: storeSettings.storeName,
           nuit: storeSettings.nuit,
           address: storeSettings.address,
@@ -141,18 +318,21 @@ export default function Dashboard() {
           email: storeSettings.email,
           stock_low_threshold: Number(storeSettings.stockLow),
           stock_stable_threshold: Number(storeSettings.stockIdeal)
-        }).select().single();
+        });
+        const newStore = resStore.data;
+        const storeError = null;
         
         if (storeError) throw storeError;
         
         // Vincular a Loja ao Perfil do dono
-        const { error: profileError } = await supabase.from('profiles').update({ store_id: newStore.id }).eq('id', user.id);
+        await api.put(`/profiles/${user.id}`, { store_id: newStore.id });
+        const profileError = null;
         if (profileError) throw profileError;
 
         setUserProfile({ ...userProfile, store_id: newStore.id });
       } else {
         // Atualizar Loja Existente
-        const { error: storeError } = await supabase.from('stores').update({
+        await api.put(`/stores/${currentStoreId}`, {
           name: storeSettings.storeName,
           nuit: storeSettings.nuit,
           address: storeSettings.address,
@@ -160,7 +340,8 @@ export default function Dashboard() {
           email: storeSettings.email,
           stock_low_threshold: Number(storeSettings.stockLow),
           stock_stable_threshold: Number(storeSettings.stockIdeal)
-        }).eq('id', currentStoreId);
+        });
+        const storeError = null;
         
         if (storeError) throw storeError;
       }
@@ -177,33 +358,33 @@ export default function Dashboard() {
     if (!newProduct.name) return;
     
     // Check max products limit based on plan
-    if (currentSubscription) {
-      const maxProducts = currentSubscription.subscription_plans?.max_products;
-      if (maxProducts !== -1 && products.length >= maxProducts) {
-        showToast(`O seu plano permite no máximo ${maxProducts} categorias. Faça upgrade!`, 'error');
+    if (!isSuperAdmin) {
+      if (currentSubscription) {
+        const maxProducts = currentSubscription.subscription_plans?.max_products;
+        if (maxProducts !== -1 && products.length >= maxProducts) {
+          showToast(`O seu plano permite no máximo ${maxProducts} categorias. Faça upgrade!`, 'error');
+          return;
+        }
+      } else {
+        showToast("Sem assinatura ativa. Vá à aba de Assinaturas.", 'error');
         return;
       }
-    } else {
-      showToast("Sem assinatura ativa. Vá à aba de Assinaturas.", 'error');
-      return;
     }
 
     setIsSaving(true);
     try {
       // Verifica se a Categoria já existe NESTA LOJA (ignorando maiúsculas e minúsculas)
-      const { data: exist } = await supabase
-        .from('products')
-        .select('*')
-        .eq('store_id', currentStoreId)
-        .ilike('name', newProduct.name);
-
+      const existRes = await api.get('/products');
+      const exist = existRes.data.filter(p => p.name.toLowerCase() === newProduct.name.toLowerCase());
       if (exist && exist.length > 0) {
         showToast('Este Produto/Categoria já existe!', 'info');
         setIsSaving(false);
         return;
       }
 
-      const { data, error } = await supabase.from('products').insert([{ ...newProduct, store_id: currentStoreId }]).select();
+      const res = await api.post('/products', { ...newProduct, store_id: currentStoreId });
+      const data = res.data;
+      const error = null;
       if (error) throw error;
       setProducts([...products, data[0]]);
       setShowProductModal(false);
@@ -225,12 +406,9 @@ export default function Dashboard() {
     setIsSaving(true);
     try {
       // Procurar se esta Marca já existe dentro deste Produto NESTA LOJA
-      const { data: existingItems, error: searchError } = await supabase
-        .from('brands')
-        .select('*')
-        .eq('store_id', currentStoreId)
-        .eq('product_id', Number(newBrand.product_id))
-        .ilike('name', newBrand.name);
+      const res = await api.get('/brands');
+      const searchError = null;
+      const existingItems = res.data.filter(b => b.product_id === Number(newBrand.product_id) && b.name.toLowerCase() === newBrand.name.toLowerCase());
 
       if (searchError) throw searchError;
 
@@ -240,14 +418,9 @@ export default function Dashboard() {
         // Já existe! Então apenas soma o stock e atualiza o preço
         const novoStock = Number(existingItem.stock) + Number(newBrand.stock);
         
-        const { data, error } = await supabase
-          .from('brands')
-          .update({ 
-            stock: novoStock, 
-            price: Number(newBrand.price) 
-          })
-          .eq('id', existingItem.id)
-          .select('*, products(id, name, icon)');
+        const updateRes = await api.put(`/brands/${existingItem.id}`, { stock: novoStock, price: Number(newBrand.price) });
+        const data = updateRes.data;
+        const error = null;
           
         if (error) throw error;
         
@@ -258,24 +431,28 @@ export default function Dashboard() {
       } else {
         // Não existe, cria um registo totalmente novo
         // Verifica o limite de marcas antes de adicionar nova
-        if (currentSubscription) {
-          const maxBrands = currentSubscription.subscription_plans?.max_brands;
-          if (maxBrands !== -1 && brands.length >= maxBrands) {
-             showToast(`O seu plano permite no máximo ${maxBrands} marcas. Faça upgrade!`, 'error');
-             return;
+        if (!isSuperAdmin) {
+          if (currentSubscription) {
+            const maxBrands = currentSubscription.subscription_plans?.max_brands;
+            if (maxBrands !== -1 && brands.length >= maxBrands) {
+               showToast(`O seu plano permite no máximo ${maxBrands} marcas. Faça upgrade!`, 'error');
+               return;
+            }
+          } else {
+            showToast("Sem assinatura ativa. Vá à aba de Assinaturas.", 'error');
+            return;
           }
-        } else {
-          showToast("Sem assinatura ativa. Vá à aba de Assinaturas.", 'error');
-          return;
         }
 
-        const { data, error } = await supabase.from('brands').insert([{
+        const insertRes = await api.post('/brands', {
           product_id: Number(newBrand.product_id),
           name: newBrand.name,
           price: Number(newBrand.price),
           stock: Number(newBrand.stock),
           store_id: currentStoreId
-        }]).select('*, products(id, name, icon)');
+        });
+        const data = insertRes.data;
+        const error = null;
         
         if (error) throw error;
         setBrands([...brands, data[0]]);
@@ -334,14 +511,9 @@ export default function Dashboard() {
       const novoStock = Number(brandToUpdate.stock) + Number(reinforceStockData.added_stock);
       const novoPreco = reinforceStockData.new_price ? Number(reinforceStockData.new_price) : Number(brandToUpdate.price);
 
-      const { data, error } = await supabase
-        .from('brands')
-        .update({ 
-          stock: novoStock, 
-          price: novoPreco 
-        })
-        .eq('id', brandToUpdate.id)
-        .select('*, products(name)');
+      const res = await api.put(`/brands/${brandToUpdate.id}`, { stock: novoStock, price: novoPreco });
+      const data = res.data;
+      const error = null;
         
       if (error) throw error;
       
@@ -417,16 +589,9 @@ export default function Dashboard() {
       const nextDate = new Date(currentSubscription.next_billing_date);
       nextDate.setMonth(nextDate.getMonth() + subData.months);
       
-      const { data, error } = await supabase
-        .from('subscriptions')
-        .update({
-          status: 'active',
-          last_payment_date: new Date().toISOString().split('T')[0],
-          next_billing_date: nextDate.toISOString().split('T')[0],
-          amount_paid: subData.totalAmount
-        })
-        .eq('id', currentSubscription.id)
-        .select('*, subscription_plans(*)');
+      // Assinatura via backend (TODO)
+      const data = [currentSubscription];
+      const error = null;
       
       if (error) throw error;
       setCurrentSubscription(data[0]);
@@ -449,70 +614,24 @@ export default function Dashboard() {
     setIsProcessingSubscription(true);
     try {
       // Call our backend endpoint that integrates with Paysuite checkout
-      const response = await fetch('/api/payments/paysuite/initiate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: subData.totalAmount,
-          storeId: currentStoreId,
-          planId: selectedUpgradePlan.id
-        })
+      const response = await api.post('/payments/paysuite/initiate', {
+        amount: subData.totalAmount,
+        storeId: currentStoreId,
+        planId: selectedUpgradePlan.id
       });
 
-      if (!response.ok) {
-        throw new Error('Falha ao comunicar com a Paysuite');
-      }
-
-      const payloadResp = await response.json();
-      // Paysuite returns: { status: 'success', data: { checkout_url, ... } }
+      const payloadResp = response.data;
       const redirectUrl = payloadResp.data?.checkout_url || payloadResp.data?.redirect_url || payloadResp.data?.link || payloadResp.checkout_url || payloadResp.redirect_url;
 
       if (redirectUrl) {
           window.location.href = redirectUrl;
-          return; // Para aqui pois o usuario foi redirecionado
+          return;
       }
 
-      showToast(`O checkout foi iniciado! Verifique o painel Paysuite.`, 'info');
-
-      const nextDate = new Date();
-      nextDate.setMonth(nextDate.getMonth() + subData.months);
-
-      if (currentSubscription) {
-        const { data, error } = await supabase
-          .from('subscriptions')
-          .update({
-            plan_id: selectedUpgradePlan.id,
-            status: 'active',
-            last_payment_date: new Date().toISOString().split('T')[0],
-            next_billing_date: nextDate.toISOString().split('T')[0],
-            amount_paid: subData.totalAmount
-          })
-          .eq('id', currentSubscription.id)
-          .select('*, subscription_plans(*)');
-  
-        if (error) throw error;
-        setCurrentSubscription(data[0]);
-      } else {
-        const { data, error } = await supabase
-          .from('subscriptions')
-          .insert([{
-            store_name: storeSettings.storeName || 'Loja',
-            store_id: currentStoreId,
-            plan_id: selectedUpgradePlan.id,
-            status: 'active',
-            last_payment_date: new Date().toISOString().split('T')[0],
-            next_billing_date: nextDate.toISOString().split('T')[0],
-            amount_paid: subData.totalAmount
-          }])
-          .select('*, subscription_plans(*)');
-
-        if (error) throw error;
-        setCurrentSubscription(data[0]);
-      }
+      showToast(`O checkout foi iniciado! Siga as instruções do pagamento.`, 'info');
       
       setShowUpgradeModal(false);
       setSelectedUpgradePlan(null);
-      showToast(`Plano ${selectedUpgradePlan.name} activo!`);
     } catch (err) {
       console.error(err);
       showToast('Erro ao processar assinatura.', 'error');
@@ -567,10 +686,10 @@ export default function Dashboard() {
       'Data e Hora': new Date(sale.created_at).toLocaleString('pt-MZ'),
       'Método de Pagamento': sale.payment_method,
       'Valor Faturado (MZN)': (() => {
-        const targetProductId = reportFilterProduct !== 'all' ? Number(reportFilterProduct) : null;
+        const targetProductId = reportFilterProduct !== 'all' ? reportFilterProduct : null;
         if (targetProductId) {
-          const brandsOfProduct = brands.filter(b => b.product_id === targetProductId).map(b => b.id);
-          return sale.sale_items?.filter(item => brandsOfProduct.includes(item.brand_id)).reduce((acc, item) => acc + Number(item.subtotal), 0);
+          const brandsOfProduct = brands.filter(b => String(b.product_id) === String(targetProductId)).map(b => b.id);
+          return sale.sale_items?.filter(item => brandsOfProduct.some(bpId => String(bpId) === String(item.brand_id))).reduce((acc, item) => acc + Number(item.subtotal), 0);
         }
         return Number(sale.total);
       })()
@@ -582,7 +701,7 @@ export default function Dashboard() {
 
     const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     const data = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8' });
-    saveAs(data, "Relatorio_de_Vendas_KaziHub.xlsx");
+    saveAs(data, "Relatorio_de_Vendas_Stoka.xlsx");
   };
 
   const handleExportPDF = () => {
@@ -595,7 +714,7 @@ export default function Dashboard() {
     
     doc.setFontSize(22);
     doc.setTextColor(26, 26, 46); // var(--primary)
-    doc.text("Relatório de Vendas KaziHub", 14, 22);
+    doc.text("Relatório de Vendas Stoka", 14, 22);
     
     doc.setFontSize(11);
     doc.setTextColor(100, 100, 100);
@@ -612,10 +731,10 @@ export default function Dashboard() {
         new Date(sale.created_at).toLocaleString('pt-MZ'),
         sale.payment_method,
         (() => {
-          const targetProductId = reportFilterProduct !== 'all' ? Number(reportFilterProduct) : null;
+          const targetProductId = reportFilterProduct !== 'all' ? reportFilterProduct : null;
           if (targetProductId) {
-            const brandsOfProduct = brands.filter(b => b.product_id === targetProductId).map(b => b.id);
-            const sub = sale.sale_items?.filter(item => brandsOfProduct.includes(item.brand_id)).reduce((acc, item) => acc + Number(item.subtotal), 0);
+            const brandsOfProduct = brands.filter(b => String(b.product_id) === String(targetProductId)).map(b => b.id);
+            const sub = sale.sale_items?.filter(item => brandsOfProduct.some(bpId => String(bpId) === String(item.brand_id))).reduce((acc, item) => acc + Number(item.subtotal), 0) || 0;
             return sub.toFixed(2);
           }
           return Number(sale.total).toFixed(2);
@@ -640,7 +759,7 @@ export default function Dashboard() {
     doc.text(`Total Faturado: ${totalRevenue.toFixed(2)} MZN`, 14, finalY + 15);
 
     const pdfBlob = doc.output('blob');
-    saveAs(pdfBlob, "Relatorio_de_Vendas_KaziHub.pdf");
+    saveAs(pdfBlob, "Relatorio_de_Vendas_Stoka.pdf");
   };
 
 
@@ -648,18 +767,36 @@ export default function Dashboard() {
     async function fetchData() {
       setIsLoading(true);
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          navigate('/');
+          return;
+        }
         if (!user) {
           navigate('/');
           return;
         }
 
-        const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+        const [profilesRes, storesRes, plansRes, myStoresRes] = await Promise.all([
+          api.get('/profiles'),
+          api.get('/stores'),
+          api.get('/subscription_plans'),
+          api.get('/my_stores').catch(() => ({ data: [] }))
+        ]);
+
+        const profile = profilesRes.data.find(p => p.id === user.id);
+        const storeId = profile?.store_id;
+
         if (profile) {
           setUserProfile(profile);
-          setCurrentStoreId(profile.store_id);
-          if (profile.store_id) {
-             const { data: store } = await supabase.from('stores').select('*').eq('id', profile.store_id).single();
+          setProfileSettings({
+            fullName: profile.full_name || '',
+            email: profile.email || '',
+            password: '',
+            avatarUrl: profile.avatar_url || ''
+          });
+          setCurrentStoreId(storeId);
+          if (storeId) {
+             const store = storesRes.data.find(s => s.id === storeId);
              if (store) {
                setStoreSettings({
                   storeName: store.name || '',
@@ -671,17 +808,17 @@ export default function Dashboard() {
                   stockIdeal: store.stock_stable_threshold || 50
                });
              }
+          } else {
+             // If user has no store active, force them to the stores tab
+             setActiveTab('lojas');
           }
         }
 
-        const storeId = profile?.store_id;
-
-        const [productsRes, brandsRes, salesRes, plansRes, subsRes] = await Promise.all([
-          storeId ? supabase.from('products').select('*').eq('store_id', storeId) : supabase.from('products').select('*').is('store_id', null),
-          storeId ? supabase.from('brands').select('*, products(id, name, icon)').eq('store_id', storeId) : supabase.from('brands').select('*, products(id, name, icon)').is('store_id', null),
-          storeId ? supabase.from('sales').select('*, sale_items(brand_id, subtotal)').eq('store_id', storeId).order('created_at', { ascending: false }) : supabase.from('sales').select('*, sale_items(brand_id, subtotal)').is('store_id', null).order('created_at', { ascending: false }),
-          supabase.from('subscription_plans').select('*').order('price', { ascending: true }),
-          storeId ? supabase.from('subscriptions').select('*, subscription_plans(*)').eq('store_id', storeId).limit(1) : supabase.from('subscriptions').select('*, subscription_plans(*)').is('store_id', null).limit(1)
+        const [productsRes, brandsRes, salesRes, subsRes] = await Promise.all([
+          api.get(storeId ? `/products?store_id=${storeId}` : '/products'),
+          api.get(storeId ? `/brands?store_id=${storeId}` : '/brands'),
+          api.get(storeId ? `/sales?store_id=${storeId}` : '/sales'),
+          api.get(storeId ? `/subscriptions?store_id=${storeId}` : '/subscriptions')
         ]);
         
         if (productsRes.data) setProducts(productsRes.data);
@@ -689,6 +826,9 @@ export default function Dashboard() {
         if (salesRes.data) setSales(salesRes.data);
         if (plansRes.data) setSubscriptionPlans(plansRes.data);
         if (subsRes.data && subsRes.data.length > 0) setCurrentSubscription(subsRes.data[0]);
+        else setCurrentSubscription(null);
+        if (myStoresRes && myStoresRes.data) setMyStores(myStoresRes.data);
+        if (profilesRes.data) setStoreUsers(profilesRes.data);
       } catch (error) {
         console.error("Error fetching data:", error);
       } finally {
@@ -707,36 +847,12 @@ export default function Dashboard() {
   const handleDeleteBrand = async (brandId) => {
     if (!window.confirm('Tem a certeza que deseja eliminar este item?')) return;
     try {
-      const { error } = await supabase.from('brands').delete().eq('id', brandId);
-      if (error) throw error;
+      await api.delete(`/brands/${brandId}?store_id=${currentStoreId}`);
       showToast('Item eliminado com sucesso!', 'success');
       fetchBrands(currentStoreId);
     } catch (err) {
       console.error(err);
-      showToast('Erro ao eliminar item.', 'error');
-    }
-  };
-
-  const handleUpdateBrand = async () => {
-    if (!editingBrand.name || !editingBrand.price) return;
-    setIsSaving(true);
-    try {
-      const { error } = await supabase
-        .from('brands')
-        .update({
-          name: editingBrand.name,
-          price: Number(editingBrand.price),
-          stock: Number(editingBrand.stock)
-        })
-        .eq('id', editingBrand.id);
-
-      if (error) throw error;
-      showToast('Item atualizado com sucesso!', 'success');
-      setShowEditBrandModal(false);
-      fetchBrands(currentStoreId);
-    } catch (err) {
-      console.error(err);
-      showToast('Erro ao atualizar item.', 'error');
+      showToast(err.response?.data?.error || 'Erro ao eliminar item.', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -746,13 +862,11 @@ export default function Dashboard() {
     if (!editingProduct.name) return;
     setIsSaving(true);
     try {
-      const { error } = await supabase
-        .from('products')
-        .update({
-          name: editingProduct.name,
-          icon: editingProduct.icon
-        })
-        .eq('id', editingProduct.id);
+      await api.put(`/products/${editingProduct.id}`, {
+        name: editingProduct.name,
+        icon: editingProduct.icon
+      });
+      const error = null;
 
       if (error) throw error;
       showToast('Categoria atualizada com sucesso!', 'success');
@@ -770,29 +884,38 @@ export default function Dashboard() {
   const handleDeleteProduct = async (productId) => {
     if (!window.confirm('Ao eliminar esta categoria, todos os itens (marcas) associados também serão eliminados. Continuar?')) return;
     try {
-      const { error } = await supabase.from('products').delete().eq('id', productId);
+      await api.delete(`/products/${productId}?store_id=${currentStoreId}`);
+      const error = null;
       if (error) throw error;
       showToast('Categoria eliminada!', 'success');
+      setShowEditProductModal(false);
       fetchProducts(currentStoreId);
       fetchBrands(currentStoreId);
     } catch (err) {
       console.error(err);
-      showToast('Erro ao eliminar categoria.', 'error');
+      showToast(err.response?.data?.error || 'Erro ao eliminar categoria.', 'error');
     }
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    logout();
     navigate('/');
   };
 
-  const NAV_ITEMS = [
-    { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
-    { id: 'produtos', label: 'Produtos', icon: <Package size={20} /> },
+  const baseNavItems = [
+    ...(currentStoreId ? [{ id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> }] : []),
+    ...(currentStoreId ? [{ id: 'produtos', label: 'Produtos', icon: <Package size={20} /> }] : []),
     { id: 'assinaturas', label: 'Assinaturas', icon: <CreditCard size={20} /> },
-    { id: 'relatorios', label: 'Relatórios', icon: <BarChart3 size={20} /> },
-    { id: 'configuracoes', label: 'Configurações', icon: <Settings size={20} /> },
+    ...(currentStoreId ? [{ id: 'relatorios', label: 'Relatórios', icon: <BarChart3 size={20} /> }] : []),
+    { id: 'configuracoes', label: 'Configurações de Perfil', icon: <Settings size={20} /> },
   ];
+
+  const NAV_ITEMS = userProfile?.role === 'owner' || userProfile?.role === 'superadmin' ? [
+    ...baseNavItems.filter(item => item.id !== 'configuracoes'),
+    { id: 'lojas', label: 'Gestão de Lojas', icon: <Store size={20} /> },
+    ...(currentStoreId ? [{ id: 'vendedores', label: 'Vendedores', icon: <Users size={20} /> }] : []),
+    { id: 'configuracoes', label: 'Configurações de Perfil', icon: <Settings size={20} /> }
+  ] : baseNavItems;
 
   // Computed Stats
   const totalSalesValue = sales.reduce((acc, sale) => acc + Number(sale.total), 0);
@@ -810,7 +933,7 @@ export default function Dashboard() {
       <aside className={`sidebar ${isMobileMenuOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
           <div className="sidebar-logo">
-            <img src="/kazilogoadmin.png" alt="KaziHub Logo" style={{ height: '40px', width: 'auto' }} />
+            <img src="/logo.png" alt="Stoka Logo" style={{ height: '40px', width: 'auto' }} />
           </div>
           <button className="mobile-close-btn" onClick={() => setIsMobileMenuOpen(false)}>
             <X size={24} />
@@ -857,11 +980,11 @@ export default function Dashboard() {
             <button className="mobile-menu-btn" onClick={() => setIsMobileMenuOpen(true)}>
               <Menu size={24} />
             </button>
-            <div className="header-greeting">Bem-vindo(a), {storeSettings.storeName}</div>
+            <div className="header-greeting">Bem-vindo(a), {user?.full_name || 'Utilizador'}</div>
           </div>
           <div className="header-right">
              <div className="user-avatar">
-               {storeSettings.storeName.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase()}
+               {(user?.full_name || 'U').split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase()}
              </div>
           </div>
         </header>
@@ -877,25 +1000,76 @@ export default function Dashboard() {
             <>
               {activeTab === 'dashboard' && (
                 <>
+                  <div className="card-header" style={{ marginBottom: '20px', padding: 0, background: 'none', border: 'none' }}>
+                    <div>
+                      <p style={{ color: 'var(--secondary)', fontSize: '14px' }}>Resumo geral de desempenho da sua loja.</p>
+                    </div>
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                      <select 
+                        value={dashboardCategoryFilter}
+                        onChange={(e) => setDashboardCategoryFilter(e.target.value)}
+                        style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none', backgroundColor: 'var(--bg-surface)', minWidth: '200px' }}
+                      >
+                        <option value="all">Todas Categorias</option>
+                        {products.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
                   <div className="stats-grid">
                     <div className="stat-card">
                       <div className="stat-info">
                         <span className="stat-label">Vendas de Hoje</span>
-                        <span className="stat-value">{todaysSalesValue.toFixed(2)} MZN</span>
+                        <span className="stat-value">
+                          {(() => {
+                            const today = new Date().toDateString();
+                            const targetCatId = dashboardCategoryFilter !== 'all' ? dashboardCategoryFilter : null;
+                            const brandsInCat = targetCatId ? brands.filter(b => String(b.product_id) === String(targetCatId)).map(b => b.id) : null;
+                            
+                            return sales
+                              .filter(s => new Date(s.created_at).toDateString() === today)
+                              .reduce((acc, sale) => {
+                                if (brandsInCat) {
+                                  const sub = sale.sale_items?.filter(item => brandsInCat.some(bpId => String(bpId) === String(item.brand_id))).reduce((a, i) => a + Number(i.subtotal), 0) || 0;
+                                  return acc + sub;
+                                }
+                                return acc + Number(sale.total);
+                              }, 0).toFixed(2);
+                          })()} MZN
+                        </span>
                       </div>
                       <div className="stat-icon"><BarChart3 size={24} /></div>
                     </div>
                     <div className="stat-card">
                       <div className="stat-info">
-                        <span className="stat-label">Total de Marcas Analisadas</span>
-                        <span className="stat-value">{brands.length}</span>
+                        <span className="stat-label">
+                          {dashboardCategoryFilter !== 'all' ? `Itens em ${products.find(p => String(p.id) === String(dashboardCategoryFilter))?.name}` : 'Total de Marcas Analisadas'}
+                        </span>
+                        <span className="stat-value">
+                          {dashboardCategoryFilter === 'all' ? brands.length : brands.filter(b => String(b.product_id) === String(dashboardCategoryFilter)).length}
+                        </span>
                       </div>
                       <div className="stat-icon" style={{ backgroundColor: '#e2e8f0', color: 'var(--primary)' }}><Package size={24} /></div>
                     </div>
                     <div className="stat-card">
                       <div className="stat-info">
                         <span className="stat-label">Faturado Histórico</span>
-                        <span className="stat-value">{totalSalesValue.toFixed(2)} MZN</span>
+                        <span className="stat-value">
+                          {(() => {
+                            const targetCatId = dashboardCategoryFilter !== 'all' ? dashboardCategoryFilter : null;
+                            const brandsInCat = targetCatId ? brands.filter(b => String(b.product_id) === String(targetCatId)).map(b => b.id) : null;
+                            
+                            return sales.reduce((acc, sale) => {
+                              if (brandsInCat) {
+                                const sub = sale.sale_items?.filter(item => brandsInCat.some(bpId => String(bpId) === String(item.brand_id))).reduce((a, i) => a + Number(i.subtotal), 0) || 0;
+                                return acc + sub;
+                              }
+                              return acc + Number(sale.total);
+                            }, 0).toFixed(2);
+                          })()} MZN
+                        </span>
                       </div>
                       <div className="stat-icon" style={{ backgroundColor: '#eefdf4', color: 'var(--success)' }}><CreditCard size={24} /></div>
                     </div>
@@ -905,8 +1079,9 @@ export default function Dashboard() {
 
               {activeTab === 'produtos' && (
                 <div className="content-card">
-                  <div className="card-header">
-                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div className="card-header" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <h3>Gestão de Marcas e Produtos</h3>
                         <button 
                           onClick={() => {
@@ -917,21 +1092,45 @@ export default function Dashboard() {
                         >
                           <RefreshCw size={18} />
                         </button>
-                     </div>
-                     <div className="action-buttons-group">
-                       <button className="btn-primary" style={{ backgroundColor: '#f97316' }} onClick={openReinforceStockModal}>
-                          <Plus size={18} />
-                          Reforçar Stock
-                       </button>
-                       <button className="btn-primary" style={{ backgroundColor: 'var(--primary)' }} onClick={() => setShowProductModal(true)}>
-                          <Plus size={18} />
-                          Novo Produto
-                       </button>
-                       <button className="btn-primary" onClick={openBrandModal}>
-                          <Plus size={18} />
-                          Nova Marca / Item
-                       </button>
-                     </div>
+                      </div>
+                      <div className="action-buttons-group">
+                        <button className="btn-primary" style={{ backgroundColor: '#f97316' }} onClick={openReinforceStockModal}>
+                           <Plus size={18} />
+                           Reforçar Stock
+                        </button>
+                        <button className="btn-primary" style={{ backgroundColor: 'var(--primary)' }} onClick={() => setShowProductModal(true)}>
+                           <Plus size={18} />
+                           Novo Produto
+                        </button>
+                        <button className="btn-primary" onClick={openBrandModal}>
+                           <Plus size={18} />
+                           Nova Marca / Item
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                      <div style={{ flex: 1, position: 'relative' }}>
+                        <Filter size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--secondary)' }} />
+                        <input 
+                          type="text"
+                          placeholder="Pesquisar marca ou categoria..."
+                          value={productSearch}
+                          onChange={(e) => setProductSearch(e.target.value)}
+                          style={{ width: '100%', padding: '10px 12px 10px 40px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none' }}
+                        />
+                      </div>
+                      <select 
+                        value={productCategoryFilter}
+                        onChange={(e) => setProductCategoryFilter(e.target.value)}
+                        style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none', backgroundColor: 'var(--bg-surface)', minWidth: '200px' }}
+                      >
+                        <option value="all">Todas Categorias</option>
+                        {products.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                   {brands.length === 0 ? (
                     <p style={{ color: 'var(--secondary)' }}>Nenhuma marca encontrada no sistema...</p>
@@ -944,63 +1143,70 @@ export default function Dashboard() {
                            <th>PREÇO DE VENDA</th>
                            <th>STOCK</th>
                            <th>STATUS</th>
-                           <th style={{ textAlign: 'right' }}>AÇÕES</th>
-                         </tr>
-                       </thead>
-                       <tbody>
-                         {brands.map(brand => (
-                           <tr key={brand.id}>
-                             <td>
-                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                 <strong>{brand.name}</strong>
-                                 <button 
-                                   onClick={() => { setEditingBrand(brand); setShowEditBrandModal(true); }}
-                                   style={{ background: 'none', border: 'none', color: 'var(--secondary)', cursor: 'pointer', opacity: 0.5 }}
-                                   title="Editar Marca/Item"
-                                 >
-                                   <Edit2 size={14} />
-                                 </button>
-                               </div>
-                             </td>
-                             <td>
-                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                 {brand.products?.name || 'Desconhecido'}
-                                 <button 
-                                   onClick={() => { setEditingProduct(brand.products); setShowEditProductModal(true); }}
-                                   style={{ background: 'none', border: 'none', color: 'var(--secondary)', cursor: 'pointer', opacity: 0.5 }}
-                                   title="Editar Categoria"
-                                 >
-                                   <Edit2 size={14} />
-                                 </button>
-                               </div>
-                             </td>
-                             <td>{Number(brand.price).toFixed(2)} MZN</td>
-                             <td>{brand.stock} un</td>
-                             <td>
-                                <span style={{ 
-                                  color: Number(brand.stock) <= Number(storeSettings.stockLow) ? 'var(--danger)' : 
-                                         Number(brand.stock) <= Number(storeSettings.stockIdeal) ? '#eab308' : 
-                                         'var(--success)' 
-                                }}>
-                                  {Number(brand.stock) <= Number(storeSettings.stockLow) ? 'Crítico' : 
-                                   Number(brand.stock) <= Number(storeSettings.stockIdeal) ? 'Abaixo do ideal' : 
-                                   'Estável'}
-                                </span>
-                             </td>
-                             <td>
-                               <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                                 <button 
-                                   className="btn-icon" 
-                                   style={{ color: 'var(--danger)', backgroundColor: 'transparent', border: 'none', cursor: 'pointer' }}
-                                   onClick={() => handleDeleteBrand(brand.id)}
-                                 >
-                                   <Trash2 size={18} />
-                                 </button>
-                               </div>
-                             </td>
-                           </tr>
-                         ))}
-                       </tbody>
+                          <th style={{ textAlign: 'right' }}>AÇÕES</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {brands
+                          .filter(brand => {
+                            const matchesSearch = brand.name.toLowerCase().includes(productSearch.toLowerCase()) || 
+                                                brand.products?.name?.toLowerCase().includes(productSearch.toLowerCase());
+                            const matchesCategory = productCategoryFilter === 'all' || String(brand.product_id) === String(productCategoryFilter);
+                            return matchesSearch && matchesCategory;
+                          })
+                          .map(brand => (
+                            <tr key={brand.id}>
+                              <td>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <strong>{brand.name}</strong>
+                                  <button 
+                                    onClick={() => { setEditingBrand(brand); setShowEditBrandModal(true); }}
+                                    style={{ background: 'none', border: 'none', color: 'var(--secondary)', cursor: 'pointer', opacity: 0.5 }}
+                                    title="Editar Marca/Item"
+                                  >
+                                    <Edit2 size={14} />
+                                  </button>
+                                </div>
+                              </td>
+                              <td>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  {brand.products?.name || 'Desconhecido'}
+                                  <button 
+                                    onClick={() => { setEditingProduct(brand.products); setShowEditProductModal(true); }}
+                                    style={{ background: 'none', border: 'none', color: 'var(--secondary)', cursor: 'pointer', opacity: 0.5 }}
+                                    title="Editar Categoria"
+                                  >
+                                    <Edit2 size={14} />
+                                  </button>
+                                </div>
+                              </td>
+                              <td>{Number(brand.price).toFixed(2)} MZN</td>
+                              <td>{brand.stock} un</td>
+                              <td>
+                                 <span style={{ 
+                                   color: Number(brand.stock) <= Number(storeSettings.stockLow) ? 'var(--danger)' : 
+                                          Number(brand.stock) <= Number(storeSettings.stockIdeal) ? '#eab308' : 
+                                          'var(--success)' 
+                                 }}>
+                                   {Number(brand.stock) <= Number(storeSettings.stockLow) ? 'Crítico' : 
+                                    Number(brand.stock) <= Number(storeSettings.stockIdeal) ? 'Abaixo do ideal' : 
+                                    'Estável'}
+                                 </span>
+                              </td>
+                              <td>
+                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                  <button 
+                                    className="btn-icon" 
+                                    style={{ color: 'var(--danger)', backgroundColor: 'transparent', border: 'none', cursor: 'pointer' }}
+                                    onClick={() => handleDeleteBrand(brand.id)}
+                                  >
+                                    <Trash2 size={18} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
                     </table>
                   )}
                 </div>
@@ -1009,32 +1215,35 @@ export default function Dashboard() {
               {activeTab === 'assinaturas' && (
                 <>
                   {/* Current Plan Status Banner */}
-                  {currentSubscription && (() => {
-                    const statusInfo = getSubscriptionStatusInfo();
-                    const plan = currentSubscription.subscription_plans;
-                    const planColor = plan ? getPlanColor(plan.name) : getPlanColor('');
-                    return (
-                      <div className="subscription-current-plan">
-                        <div className="subscription-plan-info">
-                          <div style={{ width: '56px', height: '56px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {plan ? getPlanIcon(plan.name) : <CreditCard size={28} />}
-                          </div>
-                          <div>
-                            <div style={{ fontSize: '14px', opacity: 0.85, marginBottom: '4px' }}>Plano Atual</div>
-                            <div style={{ fontSize: '28px', fontWeight: '800' }}>{plan?.name || 'Sem Plano'}</div>
-                            <div style={{ fontSize: '14px', opacity: 0.8, marginTop: '4px' }}>{plan?.description || ''}</div>
-                          </div>
+                  <div className="subscription-current-plan">
+                    <div className="subscription-plan-info">
+                      <div style={{ width: '56px', height: '56px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {currentSubscription?.subscription_plans ? getPlanIcon(currentSubscription.subscription_plans.name) : <CreditCard size={28} />}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '14px', opacity: 0.85, marginBottom: '4px' }}>Plano Atual</div>
+                        <div style={{ fontSize: '28px', fontWeight: '800' }}>
+                          {currentSubscription?.payment_method === 'trial_14_dias' 
+                            ? '14 Dias Grátis' 
+                            : (currentSubscription?.subscription_plans?.name || 'Sem Plano / Teste')}
                         </div>
-                        <div className="subscription-plan-price">
-                          <div className="subscription-status-badge" style={{ backgroundColor: statusInfo.bg, color: statusInfo.color }}>
-                            {statusInfo.label}
-                          </div>
-                          <div style={{ fontSize: '32px', fontWeight: '800' }}>{Number(currentSubscription.amount_paid).toFixed(2)} MZN</div>
-                          <div style={{ fontSize: '13px', opacity: 0.8 }}>/ mês</div>
+                        <div style={{ fontSize: '14px', opacity: 0.8, marginTop: '4px' }}>
+                          {currentSubscription?.payment_method === 'trial_14_dias'
+                            ? 'Aproveite o período de teste com as funcionalidades do plano Básico.'
+                            : (currentSubscription?.subscription_plans?.description || 'Você não possui uma assinatura ativa no momento.')}
                         </div>
                       </div>
-                    );
-                  })()}
+                    </div>
+                    <div className="subscription-plan-price">
+                      <div className="subscription-status-badge" style={{ backgroundColor: currentSubscription ? getSubscriptionStatusInfo().bg : '#fef2f2', color: currentSubscription ? getSubscriptionStatusInfo().color : '#ef4444' }}>
+                        {currentSubscription ? getSubscriptionStatusInfo().label : 'Inativo'}
+                      </div>
+                      <div style={{ fontSize: '32px', fontWeight: '800' }}>
+                        {currentSubscription ? Number(currentSubscription.amount_paid).toFixed(2) : '0.00'} MZN
+                      </div>
+                      <div style={{ fontSize: '13px', opacity: 0.8 }}>/ mês</div>
+                    </div>
+                  </div>
 
                   {/* Info Cards Row */}
                   <div className="subscription-cards-grid">
@@ -1056,7 +1265,7 @@ export default function Dashboard() {
                       <div>
                         <div style={{ fontSize: '13px', color: 'var(--secondary)' }}>Método de Pagamento</div>
                         <div style={{ fontWeight: '700', fontSize: '16px', textTransform: 'capitalize' }}>
-                          {currentSubscription?.payment_method === 'mpesa' ? '📲 M-Pesa' : '💵 ' + (currentSubscription?.payment_method || '—')}
+                          {currentSubscription?.payment_method === 'mpesa' ? '📲 M-Pesa' : currentSubscription?.payment_method === 'trial_14_dias' ? '🎁 14 Dias Grátis' : '💵 ' + (currentSubscription?.payment_method || '—')}
                         </div>
                       </div>
                     </div>
@@ -1189,11 +1398,15 @@ export default function Dashboard() {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px', flex: 1 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
                                 <Check size={16} style={{ color: planColor.main }} />
-                                <span>{plan.max_products === -1 ? 'Produtos ilimitados' : `Até ${plan.max_products} produtos`}</span>
+                                <span>{plan.name === 'Básico' ? 'Até 1 Loja' : plan.name === 'Profissional' ? 'Até 3 Lojas' : 'Até 10 Lojas'}</span>
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
                                 <Check size={16} style={{ color: planColor.main }} />
-                                <span>{plan.max_brands === -1 ? 'Marcas ilimitadas' : `Até ${plan.max_brands} marcas`}</span>
+                                <span>{Number(plan.max_products) === -1 ? 'Produtos infinitos' : `Até ${plan.max_products} produtos`}</span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
+                                <Check size={16} style={{ color: planColor.main }} />
+                                <span>{Number(plan.max_brands) === -1 ? 'Marcas infinitas' : `Até ${plan.max_brands} marcas`}</span>
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
                                 <Check size={16} style={{ color: planColor.main }} />
@@ -1213,15 +1426,15 @@ export default function Dashboard() {
                               </div>
                             </div>
                             {!isCurrentPlan ? (
-                             <button
+                              <button
                                 onClick={() => {
-                                  if (getPlanRank(plan.name) < getPlanRank(currentSubscription?.subscription_plans?.name)) {
+                                  if (currentSubscription && getPlanRank(plan.name) < getPlanRank(currentSubscription?.subscription_plans?.name)) {
                                     showToast("Downgrades não são permitidos enquanto o plano estiver ativo.", 'info');
                                     return;
                                   }
                                   openUpgradeModal(plan);
                                 }}
-                                disabled={getPlanRank(plan.name) < getPlanRank(currentSubscription?.subscription_plans?.name)}
+                                disabled={currentSubscription && getPlanRank(plan.name) < getPlanRank(currentSubscription?.subscription_plans?.name)}
                                 style={{
                                   width: '100%',
                                   padding: '12px',
@@ -1232,14 +1445,14 @@ export default function Dashboard() {
                                   alignItems: 'center',
                                   justifyContent: 'center',
                                   gap: '8px',
-                                  backgroundColor: getPlanRank(plan.name) < getPlanRank(currentSubscription?.subscription_plans?.name) ? '#e2e8f0' : planColor.main,
-                                  color: getPlanRank(plan.name) < getPlanRank(currentSubscription?.subscription_plans?.name) ? '#94a3b8' : 'white',
+                                  backgroundColor: currentSubscription && getPlanRank(plan.name) < getPlanRank(currentSubscription?.subscription_plans?.name) ? '#e2e8f0' : planColor.main,
+                                  color: currentSubscription && getPlanRank(plan.name) < getPlanRank(currentSubscription?.subscription_plans?.name) ? '#94a3b8' : 'white',
                                   transition: 'opacity 0.2s',
-                                  cursor: getPlanRank(plan.name) < getPlanRank(currentSubscription?.subscription_plans?.name) ? 'not-allowed' : 'pointer'
+                                  cursor: currentSubscription && getPlanRank(plan.name) < getPlanRank(currentSubscription?.subscription_plans?.name) ? 'not-allowed' : 'pointer'
                                 }}
                               >
                                 <ArrowUpCircle size={18} />
-                                {getPlanRank(plan.name) > getPlanRank(currentSubscription?.subscription_plans?.name) ? 'Fazer Upgrade' : 'Mudar para este plano'}
+                                {!currentSubscription ? 'Assinar Plano' : (getPlanRank(plan.name) > getPlanRank(currentSubscription?.subscription_plans?.name) ? 'Fazer Upgrade' : 'Mudar para este plano')}
                               </button>
                             ) : (
                               <button
@@ -1268,7 +1481,7 @@ export default function Dashboard() {
 
               {activeTab === 'relatorios' && (
                 <div className="reports-container">
-                  {currentSubscription?.subscription_plans?.has_reports ? (
+                  {(isSuperAdmin || currentSubscription?.subscription_plans?.has_reports) ? (
                     <>
                       <div className="card-header" style={{ marginBottom: '20px' }}>
                         <div>
@@ -1288,7 +1501,7 @@ export default function Dashboard() {
                             <option value="M-Kesh">M-Kesh</option>
                           </select>
 
-                          {currentSubscription?.subscription_plans?.name === 'Empresarial' && (
+                          {(isSuperAdmin || currentSubscription?.subscription_plans?.has_reports) && (
                             <select 
                               value={reportFilterProduct}
                               onChange={(e) => setReportFilterProduct(e.target.value)}
@@ -1342,21 +1555,23 @@ export default function Dashboard() {
 
                         // Product Filter (Enterprise only)
                         let productRevenue = 0;
-                        if (currentSubscription?.subscription_plans?.name === 'Empresarial' && reportFilterProduct !== 'all') {
-                          const targetProductId = Number(reportFilterProduct);
+                        if ((isSuperAdmin || currentSubscription?.subscription_plans?.has_reports) && reportFilterProduct !== 'all') {
+                          const targetProductId = reportFilterProduct;
                           
                           // Mapear marcas para o produto alvo
-                          const brandsOfProduct = brands.filter(b => b.product_id === targetProductId).map(b => b.id);
+                          const brandsOfProduct = brands.filter(b => String(b.product_id) === String(targetProductId)).map(b => b.id);
                           
                           // Filtrar vendas que contêm pelo menos um item deste produto
                           filteredSales = filteredSales.filter(sale => 
-                            sale.sale_items?.some(item => brandsOfProduct.includes(item.brand_id))
+                            Array.isArray(sale.sale_items) && sale.sale_items.some(item => 
+                              brandsOfProduct.some(bpId => String(bpId) === String(item.brand_id))
+                            )
                           );
 
                           // Calcular receita APENAS deste produto dentro dessas vendas
                           filteredSales.forEach(sale => {
                             sale.sale_items?.forEach(item => {
-                              if (brandsOfProduct.includes(item.brand_id)) {
+                              if (brandsOfProduct.some(bpId => String(bpId) === String(item.brand_id))) {
                                 productRevenue += Number(item.subtotal);
                               }
                             });
@@ -1371,8 +1586,8 @@ export default function Dashboard() {
                         
                         // Prepare chart data (Group by Date)
                         const chartDataMap = {};
-                        const targetProductId = reportFilterProduct !== 'all' ? Number(reportFilterProduct) : null;
-                        const brandsOfProduct = targetProductId ? brands.filter(b => b.product_id === targetProductId).map(b => b.id) : null;
+                        const targetProductId = reportFilterProduct !== 'all' ? reportFilterProduct : null;
+                        const brandsOfProduct = targetProductId ? brands.filter(b => String(b.product_id) === String(targetProductId)).map(b => b.id) : null;
 
                         filteredSales.forEach(sale => {
                             const d = new Date(sale.created_at).toLocaleDateString('pt-MZ', { day: '2-digit', month: 'short' });
@@ -1381,7 +1596,7 @@ export default function Dashboard() {
                             if (brandsOfProduct) {
                               // Soma apenas o subtotal do produto filtrado nesta venda
                               sale.sale_items?.forEach(item => {
-                                if (brandsOfProduct.includes(item.brand_id)) {
+                                if (brandsOfProduct.some(bpId => String(bpId) === String(item.brand_id))) {
                                   chartDataMap[d].total += Number(item.subtotal);
                                 }
                               });
@@ -1478,10 +1693,10 @@ export default function Dashboard() {
                                         </td>
                                         <td style={{ fontWeight: '700' }}>
                                           {(() => {
-                                            const targetProductId = reportFilterProduct !== 'all' ? Number(reportFilterProduct) : null;
+                                            const targetProductId = reportFilterProduct !== 'all' ? reportFilterProduct : null;
                                             if (targetProductId) {
-                                              const brandsOfProduct = brands.filter(b => b.product_id === targetProductId).map(b => b.id);
-                                              const sub = sale.sale_items?.filter(item => brandsOfProduct.includes(item.brand_id)).reduce((acc, item) => acc + Number(item.subtotal), 0);
+                                              const brandsOfProduct = brands.filter(b => String(b.product_id) === String(targetProductId)).map(b => b.id);
+                                              const sub = sale.sale_items?.filter(item => brandsOfProduct.some(bpId => String(bpId) === String(item.brand_id))).reduce((acc, item) => acc + Number(item.subtotal), 0) || 0;
                                               return `${sub.toFixed(2)} MZN`;
                                             }
                                             return `${Number(sale.total).toFixed(2)} MZN`;
@@ -1554,49 +1769,68 @@ export default function Dashboard() {
               {activeTab === 'configuracoes' && (
                 <div className="settings-container">
                   <div className="card-header" style={{ marginBottom: '24px' }}>
-                    <h3>Configurações da Loja</h3>
+                    <h3>Configurações de Perfil</h3>
                     <p style={{ color: 'var(--secondary)', fontSize: '14px', marginTop: '4px' }}>
-                      Atualize os dados e informações de contacto do seu negócio.
+                      Faça a gestão da sua conta, informações pessoais e segurança.
                     </p>
                   </div>
 
-                  <form onSubmit={handleSaveSettings} style={{ display: 'grid', gap: '24px', maxWidth: '800px' }}>
+                  <form onSubmit={handleSaveProfile} style={{ display: 'grid', gap: '24px', maxWidth: '800px' }}>
                     
                     <div className="content-card" style={{ padding: '24px' }}>
                       <h4 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)' }}>
-                        <Store size={18} />
-                        Dados Principais
+                        <User size={18} />
+                        Dados Pessoais
                       </h4>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '24px' }}>
+                        <div style={{ width: '80px', height: '80px', borderRadius: '50%', backgroundColor: 'var(--bg-main)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', border: '2px solid var(--border)' }}>
+                          {avatarFile ? (
+                            <img src={URL.createObjectURL(avatarFile)} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : profileSettings.avatarUrl ? (
+                            <img src={profileSettings.avatarUrl} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : (
+                            <User size={40} color="var(--secondary)" />
+                          )}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', color: 'var(--secondary)', fontWeight: '600' }}>Foto de Perfil</label>
+                          <input 
+                            type="file" 
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files[0];
+                              if (file && file.size > 1024 * 1024) {
+                                showToast("A imagem não pode exceder 1MB.", "error");
+                                e.target.value = ''; // Reset
+                                return;
+                              }
+                              setAvatarFile(file);
+                            }}
+                            style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none' }}
+                          />
+                          <p style={{ fontSize: '12px', color: 'var(--secondary)', marginTop: '4px' }}>Tamanho máximo: 1MB.</p>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
                         <div>
-                          <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', color: 'var(--secondary)', fontWeight: '600' }}>Nome da Loja</label>
+                          <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', color: 'var(--secondary)', fontWeight: '600' }}>Nome Completo</label>
                           <input 
                             type="text" 
                             required
-                            value={storeSettings.storeName}
-                            onChange={(e) => setStoreSettings({...storeSettings, storeName: e.target.value})}
+                            value={profileSettings.fullName}
+                            onChange={(e) => setProfileSettings({...profileSettings, fullName: e.target.value})}
                             style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none' }}
                           />
                         </div>
                         <div>
-                          <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', color: 'var(--secondary)', fontWeight: '600' }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Hash size={14} /> NUIT / NIF</span>
-                          </label>
+                          <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', color: 'var(--secondary)', fontWeight: '600' }}>Endereço de E-mail</label>
                           <input 
-                            type="text" 
-                            value={storeSettings.nuit}
-                            onChange={(e) => setStoreSettings({...storeSettings, nuit: e.target.value})}
-                            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none' }}
-                          />
-                        </div>
-                        <div style={{ gridColumn: '1 / -1' }}>
-                          <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', color: 'var(--secondary)', fontWeight: '600' }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><MapPin size={14} /> Endereço Completo</span>
-                          </label>
-                          <input 
-                            type="text" 
-                            value={storeSettings.address}
-                            onChange={(e) => setStoreSettings({...storeSettings, address: e.target.value})}
+                            type="email" 
+                            required
+                            value={profileSettings.email}
+                            onChange={(e) => setProfileSettings({...profileSettings, email: e.target.value})}
                             style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none' }}
                           />
                         </div>
@@ -1605,46 +1839,57 @@ export default function Dashboard() {
 
                     <div className="content-card" style={{ padding: '24px' }}>
                       <h4 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)' }}>
-                        <RefreshCw size={18} />
-                        Parâmetros de Stock
+                        <Lock size={18} />
+                        Segurança
                       </h4>
                       <p style={{ color: 'var(--secondary)', fontSize: '13px', marginBottom: '20px' }}>
-                        Defina os limites que determinam o estado visual do seu inventário.
+                        Deixe em branco se não quiser alterar a sua senha.
+                      </p>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', color: 'var(--secondary)', fontWeight: '600' }}>Nova Senha</label>
+                          <input 
+                            type="password" 
+                            placeholder="Mínimo de 6 caracteres"
+                            value={profileSettings.password}
+                            onChange={(e) => setProfileSettings({...profileSettings, password: e.target.value})}
+                            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none' }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="content-card" style={{ padding: '24px' }}>
+                      <h4 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)' }}>
+                        <Package size={18} />
+                        Configurações de Estoque
+                      </h4>
+                      <p style={{ color: 'var(--secondary)', fontSize: '13px', marginBottom: '20px' }}>
+                        Defina os níveis de quantidade para receber notificações de estoque.
                       </p>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                         <div>
-                          <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', color: 'var(--secondary)', fontWeight: '600' }}>
-                            Abaixo do Ideal (Crítico)
-                          </label>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <input 
-                              type="number" 
-                              value={storeSettings.stockLow}
-                              onChange={(e) => setStoreSettings({...storeSettings, stockLow: e.target.value})}
-                              style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none' }}
-                            />
-                            <span style={{ fontSize: '13px', color: 'var(--secondary)' }}>un</span>
-                          </div>
-                          <span style={{ fontSize: '11px', color: 'var(--danger)', marginTop: '4px', display: 'block' }}>Aparecerá a Vermelho</span>
+                          <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', color: 'var(--secondary)', fontWeight: '600' }}>Estoque Ideal</label>
+                          <input 
+                            type="number" 
+                            required
+                            min="1"
+                            value={storeSettings.stockIdeal}
+                            onChange={(e) => setStoreSettings({...storeSettings, stockIdeal: e.target.value})}
+                            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none' }}
+                          />
                         </div>
                         <div>
-                          <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', color: 'var(--secondary)', fontWeight: '600' }}>
-                            Ideal (Atenção)
-                          </label>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <input 
-                              type="number" 
-                              value={storeSettings.stockIdeal}
-                              onChange={(e) => setStoreSettings({...storeSettings, stockIdeal: e.target.value})}
-                              style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none' }}
-                            />
-                            <span style={{ fontSize: '13px', color: 'var(--secondary)' }}>un</span>
-                          </div>
-                          <span style={{ fontSize: '11px', color: '#ca8a04', marginTop: '4px', display: 'block' }}>Aparecerá a Amarelo</span>
+                          <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', color: 'var(--secondary)', fontWeight: '600' }}>Estoque Baixo (Aviso)</label>
+                          <input 
+                            type="number" 
+                            required
+                            min="1"
+                            value={storeSettings.stockLow}
+                            onChange={(e) => setStoreSettings({...storeSettings, stockLow: e.target.value})}
+                            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none' }}
+                          />
                         </div>
-                      </div>
-                      <div style={{ marginTop: '16px', fontSize: '12px', color: 'var(--success)', fontWeight: '500' }}>
-                        Acima de {storeSettings.stockIdeal} un: <span style={{ fontWeight: 'bold' }}>Estável (Verde)</span>
                       </div>
                     </div>
 
@@ -1667,17 +1912,159 @@ export default function Dashboard() {
                         }}
                       >
                         {isSavingSettings ? (
-                          <>Salvando...</>
+                          <>Guardando...</>
                         ) : (
                           <>
                             <Save size={18} />
-                            Salvar Configurações
+                            Guardar Perfil
                           </>
                         )}
                       </button>
                     </div>
 
                   </form>
+                </div>
+              )}
+
+              {activeTab === 'lojas' && (
+                <div className="content-card" style={{ padding: '24px' }}>
+                  <h3 style={{ marginBottom: '16px', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Store size={24} /> Gestão das Minhas Lojas
+                  </h3>
+                  <div style={{ display: 'grid', gap: '16px' }}>
+                    {myStores.map(store => (
+                      <div key={store.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', border: '1px solid var(--border)', borderRadius: '12px', backgroundColor: currentStoreId === store.id ? '#eefdf4' : 'var(--bg-surface)' }}>
+                        <div>
+                          <div style={{ fontWeight: '700', fontSize: '16px', color: 'var(--text-main)' }}>
+                            {store.name} {currentStoreId === store.id && <span style={{ fontSize: '12px', backgroundColor: 'var(--success)', color: 'white', padding: '2px 6px', borderRadius: '4px', marginLeft: '8px' }}>Ativa</span>}
+                          </div>
+                          <div style={{ fontSize: '13px', color: 'var(--secondary)', marginTop: '4px' }}>{store.address} • {store.phone}</div>
+                        </div>
+                        {currentStoreId !== store.id && (
+                          <button 
+                            className="btn-primary"
+                            style={{ backgroundColor: 'var(--success)' }}
+                            onClick={async () => {
+                              try {
+                                await api.put(`/profiles/${userProfile.id}`, { store_id: store.id, role: userProfile.role });
+                                window.location.reload();
+                              } catch(e) {
+                                showToast('Erro ao mudar de loja', 'error');
+                              }
+                            }}
+                          >
+                            Gerir Loja
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <h4 style={{ marginTop: '32px', marginBottom: '16px' }}>Adicionar Nova Loja</h4>
+                  <form onSubmit={async (e) => {
+                    e.preventDefault();
+                    setIsSavingSettings(true);
+                    try {
+                      const fd = new FormData(e.target);
+                      const res = await api.post('/stores', {
+                        name: fd.get('name'), nuit: fd.get('nuit'), address: fd.get('address'), phone: fd.get('phone'), email: fd.get('email')
+                      });
+                      const newStore = res.data;
+                      
+                      // Se for a primeira loja, vincular ao perfil e recarregar para mostrar abas
+                      if (!userProfile?.store_id) {
+                        await api.put(`/profiles/${userProfile.id}`, { store_id: newStore.id });
+                        showToast('Nova loja criada! A carregar funcionalidades...', 'success');
+                        setTimeout(() => window.location.reload(), 1000);
+                        return;
+                      }
+
+                      showToast('Nova loja criada!');
+                      e.target.reset();
+                      const { data } = await api.get('/my_stores');
+                      setMyStores(data);
+                    } catch(err) {
+                      showToast('Erro ao criar loja', 'error');
+                    } finally {
+                      setIsSavingSettings(false);
+                    }
+                  }} style={{ display: 'grid', gap: '16px', backgroundColor: 'var(--bg-main)', padding: '20px', borderRadius: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      <input name="name" placeholder="Nome da Loja" required className="sa-input" style={{ padding: '10px', borderRadius: '8px', border: '1px solid var(--border)' }} />
+                      <input name="nuit" placeholder="NUIT" className="sa-input" style={{ padding: '10px', borderRadius: '8px', border: '1px solid var(--border)' }} />
+                      <input name="address" placeholder="Endereço" className="sa-input" style={{ padding: '10px', borderRadius: '8px', border: '1px solid var(--border)' }} />
+                      <input name="phone" placeholder="Telefone" required className="sa-input" style={{ padding: '10px', borderRadius: '8px', border: '1px solid var(--border)' }} />
+                      <input name="email" placeholder="E-mail de Contacto" type="email" className="sa-input" style={{ gridColumn: 'span 2', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)' }} />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <button type="submit" disabled={isSavingSettings} className="btn-primary" style={{ backgroundColor: 'var(--success)' }}>{isSavingSettings ? 'Criando...' : 'Criar Loja'}</button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {activeTab === 'vendedores' && (
+                <div className="content-card" style={{ padding: '24px' }}>
+                  <h3 style={{ marginBottom: '16px', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Users size={24} /> Gestão de Vendedores e Equipa
+                  </h3>
+                  <div style={{ display: 'grid', gap: '12px', marginBottom: '32px' }}>
+                    {storeUsers.map(u => (
+                      <div key={u.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', border: '1px solid var(--border)', borderRadius: '12px' }}>
+                        <div>
+                          <div style={{ fontWeight: '700', fontSize: '14px' }}>{u.full_name || u.email} {u.id === userProfile.id && '(Você)'}</div>
+                          <div style={{ fontSize: '12px', color: 'var(--secondary)' }}>
+                            {u.email} • <span style={{ textTransform: 'capitalize', fontWeight: 'bold' }}>{u.role}</span>
+                            {u.store_name && ` • Loja: ${u.store_name}`}
+                          </div>
+                        </div>
+                        {u.id !== userProfile.id && (
+                          <button 
+                            type="button"
+                            onClick={() => handleRemoveUser(u.id)}
+                            style={{ color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer' }}
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <h4 style={{ marginBottom: '16px' }}>Adicionar Membro à Equipa</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', padding: '20px', backgroundColor: 'var(--bg-main)', borderRadius: '12px' }}>
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', marginBottom: '4px', color: '#64748b' }}>ATRIBUIR À LOJA</label>
+                      <select 
+                        value={newUserStoreId}
+                        onChange={(e) => setNewUserStoreId(e.target.value)}
+                        style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none' }}
+                      >
+                        <option value="">Selecione a Loja</option>
+                        {myStores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <input className="sa-input" type="text" placeholder="Nome do colaborador" value={newUserFullName} onChange={(e) => setNewUserFullName(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)' }} />
+                    </div>
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <input className="sa-input" type="email" placeholder="email@exemplo.com" value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)' }} />
+                    </div>
+                    <div>
+                      <input className="sa-input" type="password" placeholder="Senha (Mín. 6 caracteres)" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)' }} />
+                    </div>
+                    <div>
+                      <select value={newUserRole} onChange={(e) => setNewUserRole(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none' }}>
+                        <option value="vendedor">Vendedor (Apenas POS)</option>
+                        <option value="admin">Administrador de Loja</option>
+                      </select>
+                    </div>
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <button type="button" onClick={handleAddUser} disabled={isAddingUser || !newUserStoreId} className="btn-primary" style={{ width: '100%', padding: '12px', justifyContent: 'center' }}>
+                        {isAddingUser ? 'A Processar...' : 'Adicionar Membro'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </>
