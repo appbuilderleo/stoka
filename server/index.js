@@ -99,7 +99,6 @@ app.post('/api/payments/paysuite/webhook', express.raw({ type: 'application/json
 });
 
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -147,6 +146,10 @@ app.post('/api/payments/paysuite/initiate', async (req, res) => {
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`[Server] Running on port ${PORT}`);
-});
+if (!process.env.VERCEL) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[Server] Running on port ${PORT}`);
+  });
+}
+
+export default app;

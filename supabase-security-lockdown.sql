@@ -1,5 +1,5 @@
 -- ============================================================
--- SCRIPT DE SEGURANÇA KAZIHUB (RLS LOCKDOWN)
+-- SCRIPT DE SEGURANÇA STOKA (RLS LOCKDOWN)
 -- ============================================================
 
 -- Adicionar store_id à tabela de itens se não existir

@@ -1,8 +1,5 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
-import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
 import { pool, getCachedOrFetch, cache } from '../db.js';
 import { verifyToken } from '../middleware/auth.js';
 
@@ -19,26 +16,7 @@ const checkStoreAccess = async (req, storeId) => {
   const res = await pool.query('SELECT owner_id FROM stores WHERE id = $1', [storeId]);
   if (res.rows.length > 0 && res.rows[0].owner_id === req.user.id) return true;
   return false;
-};
-
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    if (!fs.existsSync('uploads')) {
-      fs.mkdirSync('uploads');
-    }
-    cb(null, 'uploads/');
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'avatar-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-const upload = multer({ 
-  storage: storage,
-  limits: { fileSize: 1024 * 1024 } // 1MB
-});
-
-// Apply auth middleware to all API routes
+// Security Helpers
 router.use(verifyToken);
 
 // ============================================================================
@@ -413,14 +391,9 @@ router.put('/profiles/:id', async (req, res) => {
   }
 });
 
-router.put('/my_profile', upload.single('avatar'), async (req, res) => {
+router.put('/my_profile', async (req, res) => {
   try {
     const { full_name, email, password } = req.body;
-    let avatar_url = req.body.avatar_url; // fallback if passed as text somehow
-
-    if (req.file) {
-      avatar_url = req.protocol + '://' + req.get('host') + '/uploads/' + req.file.filename;
-    }
 
     let query = 'UPDATE profiles SET ';
     const params = [];
@@ -434,10 +407,7 @@ router.put('/my_profile', upload.single('avatar'), async (req, res) => {
       query += `email = $${paramIdx++}, `;
       params.push(email);
     }
-    if (avatar_url !== undefined) {
-      query += `avatar_url = $${paramIdx++}, `;
-      params.push(avatar_url);
-    }
+
     if (password) {
       const salt = await bcrypt.genSalt(10);
       const passwordHash = await bcrypt.hash(password, salt);
@@ -459,9 +429,6 @@ router.put('/my_profile', upload.single('avatar'), async (req, res) => {
     
     res.json(user);
   } catch (error) {
-    if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'A imagem não pode exceder 1MB.' });
-    }
     res.status(500).json({ error: error.message });
   }
 });

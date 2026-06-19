@@ -64,10 +64,8 @@ export default function Dashboard() {
   const [profileSettings, setProfileSettings] = useState({
     fullName: '',
     email: '',
-    password: '',
-    avatarUrl: ''
+    password: ''
   });
-  const [avatarFile, setAvatarFile] = useState(null);
   const [sales, setSales] = useState([]);
   const [myStores, setMyStores] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -246,26 +244,18 @@ export default function Dashboard() {
     e.preventDefault();
     setIsSavingSettings(true);
     try {
-      const formData = new FormData();
-      formData.append('full_name', profileSettings.fullName);
-      formData.append('email', profileSettings.email);
-      
-      if (avatarFile) {
-        formData.append('avatar', avatarFile);
-      } else if (profileSettings.avatarUrl) {
-        formData.append('avatar_url', profileSettings.avatarUrl);
-      }
+      const payload = {
+        full_name: profileSettings.fullName,
+        email: profileSettings.email
+      };
 
       if (profileSettings.password && profileSettings.password.trim() !== '') {
-        formData.append('password', profileSettings.password);
+        payload.password = profileSettings.password;
       }
       
-      const res = await api.put('/my_profile', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      const res = await api.put('/my_profile', payload);
       setUserProfile(prev => ({...prev, ...res.data}));
-      setProfileSettings(prev => ({...prev, password: '', avatarUrl: res.data.avatar_url || prev.avatarUrl}));
-      setAvatarFile(null);
+      setProfileSettings(prev => ({...prev, password: ''}));
       
       if (currentStoreId) {
         await api.put(`/stores/${currentStoreId}`, {
@@ -791,8 +781,7 @@ export default function Dashboard() {
           setProfileSettings({
             fullName: profile.full_name || '',
             email: profile.email || '',
-            password: '',
-            avatarUrl: profile.avatar_url || ''
+            password: ''
           });
           setCurrentStoreId(storeId);
           if (storeId) {
@@ -1783,35 +1772,7 @@ export default function Dashboard() {
                         Dados Pessoais
                       </h4>
                       
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '24px' }}>
-                        <div style={{ width: '80px', height: '80px', borderRadius: '50%', backgroundColor: 'var(--bg-main)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', border: '2px solid var(--border)' }}>
-                          {avatarFile ? (
-                            <img src={URL.createObjectURL(avatarFile)} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          ) : profileSettings.avatarUrl ? (
-                            <img src={profileSettings.avatarUrl} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          ) : (
-                            <User size={40} color="var(--secondary)" />
-                          )}
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', color: 'var(--secondary)', fontWeight: '600' }}>Foto de Perfil</label>
-                          <input 
-                            type="file" 
-                            accept="image/*"
-                            onChange={(e) => {
-                              const file = e.target.files[0];
-                              if (file && file.size > 1024 * 1024) {
-                                showToast("A imagem não pode exceder 1MB.", "error");
-                                e.target.value = ''; // Reset
-                                return;
-                              }
-                              setAvatarFile(file);
-                            }}
-                            style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', outline: 'none' }}
-                          />
-                          <p style={{ fontSize: '12px', color: 'var(--secondary)', marginTop: '4px' }}>Tamanho máximo: 1MB.</p>
-                        </div>
-                      </div>
+
 
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
                         <div>

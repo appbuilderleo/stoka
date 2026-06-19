@@ -1,4 +1,4 @@
-# Auditoria de Segurança KaziHub
+# Auditoria de Segurança Stoka
 
 **Data:** 06 de Maio de 2026
 

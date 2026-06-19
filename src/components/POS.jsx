@@ -66,7 +66,7 @@ export default function POS() {
   const [cart, setCart] = useState([]);
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
   
-  // Supabase Data States
+  // Database States
   const [products, setProducts] = useState([]);
   const [brands, setBrands] = useState([]);
   const [isLoading, setIsLoading] = useState(true);

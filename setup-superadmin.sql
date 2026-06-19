@@ -1,5 +1,5 @@
 -- Script para promover o seu utilizador a SuperAdmin
--- Substitua 'seu_email@exemplo.com' pelo email que usou para se registar no KaziHub
+-- Substitua 'seu_email@exemplo.com' pelo email que usou para se registar no Stoka
 
 UPDATE public.profiles
 SET role = 'superadmin'
