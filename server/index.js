@@ -5,13 +5,7 @@ import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import axios from 'axios';
 import crypto from 'crypto';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { pool } from './db.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 import authRoutes from './routes/auth.js';
 import apiRoutes from './routes/api.js';
 
